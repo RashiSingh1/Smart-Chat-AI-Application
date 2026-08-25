@@ -7,7 +7,9 @@ import React, {
 import ChatHeader from "./ChatHeader";
 import MessageInput from "./MessageInput";
 
-const API_URL = "http://localhost:8000";
+const API_URL =
+  import.meta.env.VITE_API_URL ||
+  "http://127.0.0.1:8000";
 
 export default function ChatArea({
   contact,
