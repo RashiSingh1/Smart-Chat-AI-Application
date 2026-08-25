@@ -1,6 +1,6 @@
 /* =====================================================
    AUTH CARD
-   Matches SmartChat dark chat UI
+   Consistent appearance across localhost + production
    ===================================================== */
 
 .auth-card {
@@ -11,14 +11,29 @@
 
   border-radius: 22px;
 
-  background: linear-gradient(135deg, rgb(0 0 0 / 62%), rgb(250 250 250 / 10%));
+  /*
+   * Strong dark base so the card looks the same
+   * even if backdrop-filter behaves differently
+   * between browsers/environments.
+   */
+  background:
+    linear-gradient(
+      135deg,
+      rgba(18, 18, 19, 0.97),
+      rgba(42, 42, 44, 0.94)
+    );
 
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.10);
 
   box-shadow:
     0 20px 60px rgba(0, 0, 0, 0.55),
     inset 0 1px 0 rgba(255, 255, 255, 0.055);
 
+  /*
+   * Glass effect is now only an enhancement.
+   * The solid/dark background above guarantees
+   * consistent rendering.
+   */
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
 
@@ -29,6 +44,11 @@
   position: relative;
 
   overflow: hidden;
+
+  /*
+   * Prevent background/stacking issues in production.
+   */
+  isolation: isolate;
 }
 
 /* =====================================================
@@ -54,6 +74,8 @@
   );
 
   pointer-events: none;
+
+  z-index: 1;
 }
 
 /* =====================================================
@@ -64,6 +86,9 @@
   text-align: center;
 
   margin-bottom: 28px;
+
+  position: relative;
+  z-index: 2;
 }
 
 .auth-card-header h1 {
@@ -97,6 +122,9 @@
   flex-direction: column;
 
   gap: 13px;
+
+  position: relative;
+  z-index: 2;
 }
 
 /* =====================================================
@@ -120,8 +148,8 @@
 
   background: linear-gradient(
     145deg,
-    rgba(35, 35, 38, 0.88),
-    rgba(23, 24, 27, 0.92)
+    rgba(35, 35, 38, 0.96),
+    rgba(23, 24, 27, 0.98)
   );
 
   color: #eeeeee;
@@ -147,11 +175,12 @@
 
   background: linear-gradient(
     145deg,
-    rgba(40, 40, 43, 0.94),
-    rgba(24, 25, 28, 0.96)
+    rgba(40, 40, 43, 0.98),
+    rgba(24, 25, 28, 0.99)
   );
 
-  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.035);
+  box-shadow:
+    0 0 0 3px rgba(255, 255, 255, 0.035);
 }
 
 /* =====================================================
@@ -171,7 +200,11 @@
 
   outline: none;
 
-  background: linear-gradient(145deg, #e8e8e8, #bcbcbc);
+  background: linear-gradient(
+    145deg,
+    #e8e8e8,
+    #bcbcbc
+  );
 
   color: #111111;
 
@@ -181,7 +214,8 @@
 
   cursor: pointer;
 
-  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.3);
+  box-shadow:
+    0 8px 22px rgba(0, 0, 0, 0.3);
 
   transition:
     transform 0.18s ease,
@@ -190,17 +224,23 @@
 }
 
 .auth-button:hover:not(:disabled) {
-  background: linear-gradient(145deg, #f1f1f1, #c8c8c8);
+  background: linear-gradient(
+    145deg,
+    #f1f1f1,
+    #c8c8c8
+  );
 
   transform: translateY(-1px);
 
-  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.4);
+  box-shadow:
+    0 10px 26px rgba(0, 0, 0, 0.4);
 }
 
 .auth-button:active:not(:disabled) {
   transform: translateY(0);
 
-  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+  box-shadow:
+    0 5px 15px rgba(0, 0, 0, 0.3);
 }
 
 .auth-button:disabled {
@@ -228,6 +268,9 @@
   color: #777980;
 
   text-align: center;
+
+  position: relative;
+  z-index: 2;
 }
 
 .auth-footer a {
