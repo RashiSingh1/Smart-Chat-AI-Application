@@ -1,22 +1,40 @@
 import axios from "axios";
 
+// =====================================================
+// API BASE URL
+// Local development:
+//   VITE_API_URL=http://127.0.0.1:8000
+//
+// Production (Render):
+//   VITE_API_URL=https://smart-chat-ai-application.onrender.com
+
+const API_URL =
+  import.meta.env.VITE_API_URL ||
+  "http://127.0.0.1:8000";
+
 const API = axios.create({
-  baseURL:
-    import.meta.env.VITE_API_URL ||
-    "http://127.0.0.1:8000",
-  timeout: 10000,
+  baseURL: API_URL,
+  timeout: 20000,
 });
 
-// Attach Auth Token
-API.interceptors.request.use((config) => {
-  const token = localStorage.getItem("token");
+// =====================================================
+// ATTACH AUTH TOKEN
+// =====================================================
 
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
+API.interceptors.request.use(
+  (config) => {
+    const token = localStorage.getItem("token");
+
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+
+    return config;
+  },
+  (error) => {
+    return Promise.reject(error);
   }
-
-  return config;
-});
+);
 
 // =====================================================
 // IN-MEMORY CACHE
@@ -34,13 +52,11 @@ export async function getCached(url, params = {}) {
   const cacheKey =
     `${url}:${JSON.stringify(params)}`;
 
-  const cached =
-    memoryCache.get(cacheKey);
+  const cached = memoryCache.get(cacheKey);
 
   if (
     cached &&
-    Date.now() - cached.timestamp <
-      CACHE_TTL_MS
+    Date.now() - cached.timestamp < CACHE_TTL_MS
   ) {
     return {
       data: cached.data,
@@ -48,16 +64,14 @@ export async function getCached(url, params = {}) {
     };
   }
 
-  const response =
-    await API.get(url, { params });
+  const response = await API.get(url, {
+    params,
+  });
 
-  memoryCache.set(
-    cacheKey,
-    {
-      data: response.data,
-      timestamp: Date.now(),
-    }
-  );
+  memoryCache.set(cacheKey, {
+    data: response.data,
+    timestamp: Date.now(),
+  });
 
   return {
     data: response.data,
@@ -69,16 +83,17 @@ export async function getCached(url, params = {}) {
 // INVALIDATE CACHE
 // =====================================================
 
-export function invalidateCache(
-  urlPattern
-) {
-  for (
-    const key of memoryCache.keys()
-  ) {
+export function invalidateCache(urlPattern) {
+  for (const key of memoryCache.keys()) {
     if (key.includes(urlPattern)) {
       memoryCache.delete(key);
     }
   }
 }
 
+// =====================================================
+// EXPORT
+// =====================================================
+
 export default API;
+
