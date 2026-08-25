@@ -1,8 +1,31 @@
 let socket = null;
 
-// ----------------------------
-// Connect Socket
-// ----------------------------
+// =====================================================
+// WEBSOCKET BASE URL
+// =====================================================
+//
+// Local:
+//   VITE_API_URL=http://127.0.0.1:8000
+//
+// Production:
+//   VITE_API_URL=https://smart-chat-ai-application.onrender.com
+//
+// Automatically converts:
+//   http://  -> ws://
+//   https:// -> wss://
+// =====================================================
+
+const API_URL =
+  import.meta.env.VITE_API_URL ||
+  "http://127.0.0.1:8000";
+
+const WS_URL = API_URL
+  .replace(/^http:\/\//, "ws://")
+  .replace(/^https:\/\//, "wss://");
+
+// =====================================================
+// CONNECT SOCKET
+// =====================================================
 
 export function connectSocket(
   userId,
@@ -51,17 +74,22 @@ export function connectSocket(
   }
 
   // ----------------------------
-  // Create WebSocket
+  // Encode token
   // ----------------------------
 
   const encodedToken =
     encodeURIComponent(token);
 
+  // ----------------------------
+  // Create WebSocket URL
+  // ----------------------------
+
   const wsUrl =
-    `ws://127.0.0.1:8000/ws/${userId}?token=${encodedToken}`;
+    `${WS_URL}/ws/${userId}?token=${encodedToken}`;
 
   console.log(
-    "🔌 Connecting WebSocket..."
+    "🔌 Connecting WebSocket...",
+    wsUrl
   );
 
   socket = new WebSocket(wsUrl);
@@ -128,12 +156,11 @@ export function connectSocket(
 
     socket = null;
   };
-}
+};
 
-
-// ----------------------------
-// Send Message
-// ----------------------------
+// =====================================================
+// SEND SOCKET MESSAGE
+// =====================================================
 
 export function sendSocketMessage(
   message
@@ -146,7 +173,8 @@ export function sendSocketMessage(
   }
 
   if (
-    socket.readyState !== WebSocket.OPEN
+    socket.readyState !==
+    WebSocket.OPEN
   ) {
     console.error(
       "❌ WebSocket is not open."
@@ -169,19 +197,19 @@ export function sendSocketMessage(
 
     return false;
   }
-}
+};
 
-
-// ----------------------------
-// Send Typing
-// ----------------------------
+// =====================================================
+// SEND TYPING
+// =====================================================
 
 export function sendTyping(
   receiverId
 ) {
   if (
     !socket ||
-    socket.readyState !== WebSocket.OPEN
+    socket.readyState !==
+      WebSocket.OPEN
   ) {
     return;
   }
@@ -204,12 +232,11 @@ export function sendTyping(
       error
     );
   }
-}
+};
 
-
-// ----------------------------
-// Disconnect
-// ----------------------------
+// =====================================================
+// DISCONNECT
+// =====================================================
 
 export function disconnectSocket() {
   if (!socket) {
@@ -223,13 +250,12 @@ export function disconnectSocket() {
   socket.close();
 
   socket = null;
-}
+};
 
-
-// ----------------------------
-// Get Socket
-// ----------------------------
+// =====================================================
+// GET SOCKET
+// =====================================================
 
 export function getSocket() {
   return socket;
-}
+};

@@ -1,6 +1,20 @@
 import React, { useEffect, useRef, useState } from "react";
 
-const API_URL = "http://localhost:8000";
+// =====================================================
+// API BASE URL
+// =====================================================
+//
+// Local development:
+// VITE_API_URL=http://127.0.0.1:8000
+//
+// Production:
+// VITE_API_URL=https://smart-chat-ai-application.onrender.com
+//
+// =====================================================
+
+const API_URL =
+  import.meta.env.VITE_API_URL ||
+  "http://127.0.0.1:8000";
 
 export default function MessageInput({
   onSend,
@@ -33,12 +47,18 @@ export default function MessageInput({
       }
 
       if (audioStreamRef.current) {
-        audioStreamRef.current.getTracks().forEach((track) => {
-          track.stop();
-        });
+        audioStreamRef.current
+          .getTracks()
+          .forEach((track) => {
+            track.stop();
+          });
       }
     };
   }, [imagePreview]);
+
+  // =========================================================
+  // TEXT CHANGE
+  // =========================================================
 
   function handleChange(e) {
     const value = e.target.value;
@@ -49,6 +69,10 @@ export default function MessageInput({
       onTyping();
     }
   }
+
+  // =========================================================
+  // IMAGE PICKER
+  // =========================================================
 
   function openImagePicker() {
     if (
@@ -62,6 +86,10 @@ export default function MessageInput({
 
     fileInputRef.current?.click();
   }
+
+  // =========================================================
+  // IMAGE SELECT
+  // =========================================================
 
   function handleImageChange(e) {
     const file = e.target.files?.[0];
@@ -85,6 +113,10 @@ export default function MessageInput({
     setImagePreview(URL.createObjectURL(file));
   }
 
+  // =========================================================
+  // REMOVE IMAGE
+  // =========================================================
+
   function removeSelectedImage() {
     if (imagePreview) {
       URL.revokeObjectURL(imagePreview);
@@ -93,6 +125,10 @@ export default function MessageInput({
     setSelectedImage(null);
     setImagePreview("");
   }
+
+  // =========================================================
+  // SEND TEXT
+  // =========================================================
 
   async function handleSendText() {
     const trimmed = text.trim();
@@ -112,13 +148,16 @@ export default function MessageInput({
       try {
         await onSend(trimmed);
       } catch (error) {
-        console.error("Message send error:", error);
+        console.error(
+          "Message send error:",
+          error
+        );
       }
     }
   }
 
   // =========================================================
-  // IMAGE
+  // IMAGE UPLOAD + SEND
   // =========================================================
 
   async function handleSendImage() {
@@ -139,41 +178,53 @@ export default function MessageInput({
     try {
       setImageUploading(true);
 
-      const token = localStorage.getItem("token");
+      const token =
+        localStorage.getItem("token");
 
       if (!token) {
-        throw new Error("Authentication token not found.");
+        throw new Error(
+          "Authentication token not found."
+        );
       }
 
       // -----------------------------------------------------
-      // STEP 1: Upload image file
+      // STEP 1: Upload image
       // -----------------------------------------------------
 
       const formData = new FormData();
 
-      formData.append("file", selectedImage);
+      formData.append(
+        "file",
+        selectedImage
+      );
 
       const uploadResponse = await fetch(
         `${API_URL}/upload-image`,
         {
           method: "POST",
+
           headers: {
             Authorization: `Bearer ${token}`,
           },
+
           body: formData,
         }
       );
 
       if (!uploadResponse.ok) {
         const errorData =
-          await uploadResponse.json().catch(() => ({}));
+          await uploadResponse
+            .json()
+            .catch(() => ({}));
 
         throw new Error(
-          errorData.detail || "Image upload failed."
+          errorData.detail ||
+            "Image upload failed."
         );
       }
 
-      const uploadData = await uploadResponse.json();
+      const uploadData =
+        await uploadResponse.json();
 
       if (
         !uploadData.media_url ||
@@ -190,25 +241,37 @@ export default function MessageInput({
 
       if (onSendImage) {
         await onSendImage({
-          media_type: uploadData.media_type,
-          media_url: uploadData.media_url,
+          media_type:
+            uploadData.media_type,
+
+          media_url:
+            uploadData.media_url,
+
           text: text.trim(),
 
-          // Important for parent if needed
           isGroupChat,
           groupId,
         });
       }
 
+      // -----------------------------------------------------
+      // CLEAR IMAGE
+      // -----------------------------------------------------
+
       removeSelectedImage();
       setText("");
+
     } catch (error) {
-      console.error("Image send error:", error);
+      console.error(
+        "Image send error:",
+        error
+      );
 
       alert(
         error.message ||
           "Failed to send image."
       );
+
     } finally {
       setImageUploading(false);
     }
@@ -218,7 +281,9 @@ export default function MessageInput({
   // VOICE UPLOAD
   // =========================================================
 
-  async function uploadVoiceFile(audioBlob) {
+  async function uploadVoiceFile(
+    audioBlob
+  ) {
     const formData = new FormData();
 
     formData.append(
@@ -227,7 +292,8 @@ export default function MessageInput({
       "voice-message.webm"
     );
 
-    const token = localStorage.getItem("token");
+    const token =
+      localStorage.getItem("token");
 
     if (!token) {
       throw new Error(
@@ -239,16 +305,20 @@ export default function MessageInput({
       `${API_URL}/upload-audio`,
       {
         method: "POST",
+
         headers: {
           Authorization: `Bearer ${token}`,
         },
+
         body: formData,
       }
     );
 
     if (!response.ok) {
       const errorData =
-        await response.json().catch(() => ({}));
+        await response
+          .json()
+          .catch(() => ({}));
 
       throw new Error(
         errorData.detail ||
@@ -289,11 +359,13 @@ export default function MessageInput({
       );
 
       // -----------------------------------------------------
-      // STEP 1: Upload voice file
+      // STEP 1: Upload voice
       // -----------------------------------------------------
 
       const uploadData =
-        await uploadVoiceFile(audioBlob);
+        await uploadVoiceFile(
+          audioBlob
+        );
 
       if (
         !uploadData.media_url ||
@@ -315,13 +387,16 @@ export default function MessageInput({
       }
 
       await onSendVoice({
-        media_type: uploadData.media_type,
-        media_url: uploadData.media_url,
+        media_type:
+          uploadData.media_type,
 
-        // Important for group support
+        media_url:
+          uploadData.media_url,
+
         isGroupChat,
         groupId,
       });
+
     } catch (error) {
       console.error(
         "Voice send error:",
@@ -332,6 +407,7 @@ export default function MessageInput({
         error.message ||
           "Failed to send voice message."
       );
+
     } finally {
       setVoiceUploading(false);
 
@@ -363,11 +439,18 @@ export default function MessageInput({
       return;
     }
 
-    // Stop recording
+    // -----------------------------------------------------
+    // STOP
+    // -----------------------------------------------------
+
     if (isRecording) {
       mediaRecorderRef.current?.stop();
       return;
     }
+
+    // -----------------------------------------------------
+    // START
+    // -----------------------------------------------------
 
     try {
       const stream =
@@ -375,22 +458,25 @@ export default function MessageInput({
           audio: true,
         });
 
-      audioStreamRef.current = stream;
+      audioStreamRef.current =
+        stream;
 
       const recorder =
         new MediaRecorder(stream);
 
-      mediaRecorderRef.current = recorder;
+      mediaRecorderRef.current =
+        recorder;
 
       audioChunksRef.current = [];
 
-      recorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          audioChunksRef.current.push(
-            event.data
-          );
-        }
-      };
+      recorder.ondataavailable =
+        (event) => {
+          if (event.data.size > 0) {
+            audioChunksRef.current.push(
+              event.data
+            );
+          }
+        };
 
       recorder.onerror = (event) => {
         console.error(
@@ -406,6 +492,7 @@ export default function MessageInput({
       recorder.start();
 
       setIsRecording(true);
+
     } catch (error) {
       console.error(
         "Microphone access error:",
@@ -423,21 +510,34 @@ export default function MessageInput({
   // =========================================================
 
   async function handleSend() {
-    // Image
+    // -----------------------------------------------------
+    // IMAGE
+    // -----------------------------------------------------
+
     if (selectedImage) {
       await handleSendImage();
       return;
     }
 
-    // Voice
+    // -----------------------------------------------------
+    // VOICE
+    // -----------------------------------------------------
+
     if (isRecording) {
       mediaRecorderRef.current?.stop();
       return;
     }
 
-    // Text
+    // -----------------------------------------------------
+    // TEXT
+    // -----------------------------------------------------
+
     await handleSendText();
   }
+
+  // =========================================================
+  // ENTER KEY
+  // =========================================================
 
   function handleKeyDown(e) {
     if (e.key === "Enter") {
@@ -445,6 +545,10 @@ export default function MessageInput({
       handleSend();
     }
   }
+
+  // =========================================================
+  // UI
+  // =========================================================
 
   return (
     <div className="message-input">
@@ -487,7 +591,9 @@ export default function MessageInput({
       <button
         type="button"
         className={`voice-btn ${
-          isRecording ? "recording" : ""
+          isRecording
+            ? "recording"
+            : ""
         }`}
         onClick={handleVoiceToggle}
         disabled={
@@ -518,7 +624,9 @@ export default function MessageInput({
 
       <div
         className={`composer-box ${
-          selectedImage ? "has-image" : ""
+          selectedImage
+            ? "has-image"
+            : ""
         }`}
       >
 
@@ -549,6 +657,8 @@ export default function MessageInput({
 
           </div>
         )}
+
+        {/* TEXT INPUT */}
 
         <input
           type="text"
