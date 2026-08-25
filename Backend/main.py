@@ -87,11 +87,7 @@ app.add_middleware(
 UPLOAD_DIR = Path("uploads")
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
-app.mount(
-    "/uploads",
-    StaticFiles(directory="uploads"),
-    name="uploads",
-)
+app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 
 # =========================================================
@@ -1726,3 +1722,17 @@ async def websocket_endpoint(
         cleanup_websocket_rate_limit(
             authenticated_user_id
         )
+@app.get("/debug/uploads")
+def debug_uploads():
+    files = []
+
+    for file in UPLOAD_DIR.iterdir():
+        if file.is_file():
+            files.append(file.name)
+
+    return {
+        "upload_dir": str(UPLOAD_DIR.resolve()),
+        "exists": UPLOAD_DIR.exists(),
+        "files_count": len(files),
+        "files": files[-50:],
+    }
