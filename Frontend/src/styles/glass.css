@@ -1,0 +1,142 @@
+/* ==========================================================================
+   glass.css
+   Base page shell + glassmorphism container
+   Black + deep magenta, heavier frosted glass, smooth inertia scrolling.
+   ========================================================================== */
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  font-family: "Segoe UI", sans-serif;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  overflow: auto;
+  /* smooth, momentum-style scrolling without extra JS. If you add the
+     Locomotive Scroll library (see note at the bottom of this file),
+     remove `scroll-behavior` here and let the library drive the easing —
+     the two smoothing systems fight each other if both are active. */
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
+  background: #030304;
+}
+
+.chat-page {
+  height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  position: relative;
+  overflow: hidden;
+
+  /* black + deep magenta/wine backdrop instead of a flat black */
+  background:
+    radial-gradient(circle at 15% 10%, rgba(224, 22, 113, 0.16), transparent 42%),
+    radial-gradient(circle at 85% 90%, rgba(135, 8, 72, 0.14), transparent 40%),
+    linear-gradient(160deg, #030304 0%, #0c0208 55%, #030304 100%);
+}
+
+.chat-page::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: rgba(12, 2, 8, 0.4);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.chat-container {
+  position: relative;
+  width: 96%;
+  height: 94vh;
+  display: grid;
+  grid-template-columns: 330px 1fr 320px;
+  border-radius: 35px;
+  overflow: hidden;
+
+  /* heavier, more saturated glass — black base tinted with magenta/wine */
+  background: linear-gradient(150deg, rgba(135, 8, 72, 0.16), rgba(255, 255, 255, 0.05) 55%);
+  backdrop-filter: blur(40px) saturate(160%);
+  -webkit-backdrop-filter: blur(40px) saturate(160%);
+
+  box-shadow:
+    0 20px 60px rgba(0, 0, 0, 0.55),
+    0 0 80px rgba(135, 8, 72, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+
+  border: 1px solid rgba(255, 255, 255, 0.16);
+}
+
+/* thin magenta edge-light that sits just inside the border — reads as a
+   glass bevel catching light rather than a flat outline */
+.chat-container::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.08),
+    transparent 22%,
+    transparent 78%,
+    rgba(224, 22, 113, 0.06)
+  );
+}
+
+/* any inner column/panel that should share the same glass language */
+.glass-panel {
+  background: rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(30px) saturate(150%);
+  -webkit-backdrop-filter: blur(30px) saturate(150%);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+/* every internal scroll container gets the same smooth, momentum feel */
+.chat-container [class*="-list"],
+.chat-container [class*="-panel"],
+.chat-container [class*="scroll"] {
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html, body, .chat-container [class*="-list"] {
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ==========================================================================
+   OPTIONAL — true Locomotive Scroll momentum
+
+   The CSS above gives you smooth easing on native scroll (works everywhere,
+   zero JS). If you want real inertia/parallax-style momentum scrolling —
+   the actual "Locomotive" feel — wrap your scrollable region and initialize
+   the library instead:
+
+   <div data-scroll-container>
+     <div class="chat-page"> ... </div>
+   </div>
+
+   <script src="https://cdn.jsdelivr.net/npm/locomotive-scroll@4/dist/locomotive-scroll.min.js"></script>
+   <script>
+     const scroll = new LocomotiveScroll({
+       el: document.querySelector('[data-scroll-container]'),
+       smooth: true,
+       lerp: 0.08          // lower = smoother/heavier, higher = snappier
+     });
+   </script>
+
+   Note: Locomotive Scroll takes over the page's scroll physics, which
+   works well for a marketing/landing page but can fight fixed chat panes,
+   internal message-list scrolling, and virtualized lists. For this chat
+   layout the CSS-only smoothing above is the safer default — reach for
+   the JS version only if `.chat-page` becomes a full scrolling page
+   rather than a fixed-height app shell.
+   ========================================================================== */
