@@ -4,11 +4,6 @@ import UserCard from "./UserCard";
 
 // =====================================================
 // CONVERT ANY TIMESTAMP FORMAT INTO MILLISECONDS
-// Supports:
-// - Unix seconds
-// - Unix milliseconds
-// - ISO date strings
-// - Date-compatible strings
 // =====================================================
 
 function normalizeTimestamp(timestamp) {
@@ -20,28 +15,23 @@ function normalizeTimestamp(timestamp) {
     return 0;
   }
 
-  // Already a Date object
   if (timestamp instanceof Date) {
     const time = timestamp.getTime();
     return Number.isNaN(time) ? 0 : time;
   }
 
-  // Numeric timestamp
   if (typeof timestamp === "number") {
     if (timestamp <= 0) {
       return 0;
     }
 
-    // Unix seconds -> milliseconds
     if (timestamp < 100000000000) {
       return timestamp * 1000;
     }
 
-    // Already milliseconds
     return timestamp;
   }
 
-  // Numeric string
   if (
     typeof timestamp === "string" &&
     /^\d+$/.test(timestamp.trim())
@@ -52,7 +42,6 @@ function normalizeTimestamp(timestamp) {
       return 0;
     }
 
-    // Unix seconds -> milliseconds
     if (numericTimestamp < 100000000000) {
       return numericTimestamp * 1000;
     }
@@ -60,7 +49,6 @@ function normalizeTimestamp(timestamp) {
     return numericTimestamp;
   }
 
-  // ISO / normal date string
   const parsedDate = new Date(timestamp);
   const time = parsedDate.getTime();
 
@@ -69,11 +57,6 @@ function normalizeTimestamp(timestamp) {
 
 // =====================================================
 // SIDEBAR TIME / DATE LABEL
-//
-// Today     -> 19:00
-// Yesterday -> Yesterday
-// Older     -> 21 Aug
-// Older year -> 21 Aug 2025
 // =====================================================
 
 export function getSidebarTimeLabel(timestamp) {
@@ -91,10 +74,6 @@ export function getSidebarTimeLabel(timestamp) {
 
   const now = new Date();
 
-  // ===================================================
-  // TODAY
-  // ===================================================
-
   const isToday =
     date.getFullYear() === now.getFullYear() &&
     date.getMonth() === now.getMonth() &&
@@ -107,10 +86,6 @@ export function getSidebarTimeLabel(timestamp) {
       hourCycle: "h23",
     });
   }
-
-  // ===================================================
-  // YESTERDAY
-  // ===================================================
 
   const yesterday = new Date(now);
 
@@ -125,10 +100,6 @@ export function getSidebarTimeLabel(timestamp) {
     return "Yesterday";
   }
 
-  // ===================================================
-  // OLDER DATE
-  // ===================================================
-
   const isSameYear =
     date.getFullYear() === now.getFullYear();
 
@@ -141,7 +112,6 @@ export function getSidebarTimeLabel(timestamp) {
 
 // =====================================================
 // GET LAST MESSAGE TIMESTAMP
-// Handles multiple possible backend field names
 // =====================================================
 
 function getLastMessageTimestamp(item) {
@@ -202,6 +172,10 @@ function normalizeUser(user) {
   };
 }
 
+// =====================================================
+// SIDEBAR
+// =====================================================
+
 export default function Sidebar({
   contacts = [],
   groups = [],
@@ -212,12 +186,10 @@ export default function Sidebar({
   onSelectGroup,
   onCreateGroup,
 
-  // Optional external all-users data.
-  // If not supplied, Sidebar loads /users itself.
+  // Optional external all-users data
   allUsers = [],
 
-  // These props are kept for compatibility with your
-  // previous Sidebar implementation.
+  // Existing sidebar search compatibility
   searchResults: externalSearchResults = [],
   searchLoading: externalSearchLoading = false,
   onSearchUsers,
@@ -237,28 +209,35 @@ export default function Sidebar({
     useState([]);
 
   // =====================================================
-  // USER SEARCH STATE
+  // CREATE GROUP MEMBER SEARCH
+  // =====================================================
+
+  const [groupMemberSearch, setGroupMemberSearch] =
+    useState("");
+
+  // =====================================================
+  // MAIN SIDEBAR USER SEARCH STATE
   // =====================================================
 
   const [searchQuery, setSearchQuery] =
     useState("");
 
-  const [internalSearchResults, setInternalSearchResults] =
-    useState([]);
+  const [
+    internalSearchResults,
+    setInternalSearchResults,
+  ] = useState([]);
 
-  const [internalSearchLoading, setInternalSearchLoading] =
-    useState(false);
+  const [
+    internalSearchLoading,
+    setInternalSearchLoading,
+  ] = useState(false);
 
   const [searchError, setSearchError] =
     useState("");
 
   // =====================================================
   // ALL REGISTERED USERS
-  // Used for Create Group.
-  //
-  // IMPORTANT:
-  // This is separate from contacts/conversations.
-  // Therefore a user without any chat can still be found.
+  // Used for Create Group
   // =====================================================
 
   const [loadedAllUsers, setLoadedAllUsers] =
@@ -275,8 +254,6 @@ export default function Sidebar({
     let cancelled = false;
 
     async function loadAllRegisteredUsers() {
-      // If parent already supplied users, no need to
-      // make another /users request.
       if (
         Array.isArray(allUsers) &&
         allUsers.length > 0
@@ -287,8 +264,7 @@ export default function Sidebar({
       try {
         setAllUsersLoading(true);
 
-        const response =
-          await API.get("/users");
+        const response = await API.get("/users");
 
         if (cancelled) {
           return;
@@ -340,21 +316,51 @@ export default function Sidebar({
   }, [allUsers, loadedAllUsers]);
 
   // =====================================================
-  // SEARCH USERS
-  //
-  // IMPORTANT:
-  // This searches ALL REGISTERED USERS, not only
-  // existing conversations.
-  //
-  // Backend endpoint:
-  // GET /users/search?q=isha
+  // FILTER USERS INSIDE CREATE GROUP MODAL
+  // =====================================================
+
+  const filteredGroupMembers = useMemo(() => {
+    const query =
+      groupMemberSearch
+        .trim()
+        .toLowerCase();
+
+    if (!query) {
+      return normalizedAllUsers;
+    }
+
+    return normalizedAllUsers.filter((user) => {
+      const username =
+        String(user.username || "")
+          .toLowerCase();
+
+      const name =
+        String(user.name || "")
+          .toLowerCase();
+
+      const email =
+        String(user.email || "")
+          .toLowerCase();
+
+      return (
+        username.includes(query) ||
+        name.includes(query) ||
+        email.includes(query)
+      );
+    });
+  }, [
+    normalizedAllUsers,
+    groupMemberSearch,
+  ]);
+
+  // =====================================================
+  // MAIN SIDEBAR SEARCH
   // =====================================================
 
   useEffect(() => {
     const query =
       searchQuery.trim();
 
-    // Empty search
     if (!query) {
       setInternalSearchResults([]);
       setSearchError("");
@@ -372,39 +378,32 @@ export default function Sidebar({
           setInternalSearchLoading(true);
           setSearchError("");
 
-          // If parent provides search handler,
-          // preserve compatibility with it.
           if (onSearchUsers) {
             await onSearchUsers(query);
-            return;
-          }
+          } else {
+            const response =
+              await API.get(
+                "/users/search",
+                {
+                  params: {
+                    q: query,
+                  },
+                }
+              );
 
-          // =================================================
-          // DIRECT BACKEND SEARCH
-          // =================================================
+            if (cancelled) {
+              return;
+            }
 
-          const response =
-            await API.get(
-              "/users/search",
-              {
-                params: {
-                  q: query,
-                },
-              }
+            const results =
+              (response.data || [])
+                .map(normalizeUser)
+                .filter(Boolean);
+
+            setInternalSearchResults(
+              results
             );
-
-          if (cancelled) {
-            return;
           }
-
-          const results =
-            (response.data || [])
-              .map(normalizeUser)
-              .filter(Boolean);
-
-          setInternalSearchResults(
-            results
-          );
         } catch (error) {
           if (cancelled) {
             return;
@@ -441,7 +440,7 @@ export default function Sidebar({
   ]);
 
   // =====================================================
-  // FINAL SEARCH RESULTS
+  // FINAL MAIN SEARCH RESULTS
   // =====================================================
 
   const searchResults =
@@ -455,7 +454,7 @@ export default function Sidebar({
       : internalSearchLoading;
 
   // =====================================================
-  // SEARCH INPUT
+  // MAIN SEARCH INPUT
   // =====================================================
 
   function handleSearchChange(event) {
@@ -465,7 +464,7 @@ export default function Sidebar({
   }
 
   // =====================================================
-  // CLEAR SEARCH
+  // CLEAR MAIN SEARCH
   // =====================================================
 
   function clearUserSearch() {
@@ -479,7 +478,7 @@ export default function Sidebar({
   }
 
   // =====================================================
-  // SELECT SEARCH USER
+  // SELECT USER FROM MAIN SEARCH
   // =====================================================
 
   function handleSearchUserSelect(user) {
@@ -487,10 +486,8 @@ export default function Sidebar({
       return;
     }
 
-    // Close search first
     clearUserSearch();
 
-    // Open/start 1-to-1 chat
     onSelectContact?.({
       ...user,
 
@@ -531,6 +528,7 @@ export default function Sidebar({
 
   function openGroupModal() {
     setGroupName("");
+    setGroupMemberSearch("");
     setSelectedMemberIds([]);
     setShowGroupModal(true);
   }
@@ -541,10 +539,13 @@ export default function Sidebar({
 
   function closeGroupModal() {
     setShowGroupModal(false);
+    setGroupMemberSearch("");
+    setSelectedMemberIds([]);
+    setGroupName("");
   }
 
   // =====================================================
-  // TOGGLE MEMBER
+  // TOGGLE GROUP MEMBER
   // =====================================================
 
   function toggleMember(contactId) {
@@ -807,7 +808,7 @@ export default function Sidebar({
         </div>
 
         {/* ================================================= */}
-        {/* SEARCH RESULTS */}
+        {/* MAIN SEARCH RESULTS */}
         {/* ================================================= */}
 
         {searchQuery.trim() && (
@@ -830,8 +831,6 @@ export default function Sidebar({
               zIndex: 100,
             }}
           >
-            {/* SEARCHING */}
-
             {searchLoading ? (
               <div
                 style={{
@@ -847,8 +846,6 @@ export default function Sidebar({
                 Searching...
               </div>
             ) : searchError ? (
-              /* ERROR */
-
               <div
                 style={{
                   padding:
@@ -864,8 +861,6 @@ export default function Sidebar({
               </div>
             ) : searchResults.length ===
               0 ? (
-              /* NO RESULTS */
-
               <div
                 style={{
                   padding:
@@ -880,8 +875,6 @@ export default function Sidebar({
                 No registered user found
               </div>
             ) : (
-              /* RESULTS */
-
               searchResults.map(
                 (user) => {
                   const username =
@@ -931,8 +924,6 @@ export default function Sidebar({
                           "pointer",
                       }}
                     >
-                      {/* AVATAR */}
-
                       <span
                         style={{
                           width:
@@ -956,12 +947,8 @@ export default function Sidebar({
                         }}
                       >
                         {username
-                          .charAt(
-                            0
-                          )
+                          .charAt(0)
                           .toUpperCase()}
-
-                        {/* ONLINE DOT */}
 
                         {isOnline && (
                           <span
@@ -986,8 +973,6 @@ export default function Sidebar({
                           />
                         )}
                       </span>
-
-                      {/* USER INFO */}
 
                       <span
                         style={{
@@ -1222,7 +1207,9 @@ export default function Sidebar({
               e.stopPropagation()
             }
           >
+            {/* ================================================= */}
             {/* HEADER */}
+            {/* ================================================= */}
 
             <div className="group-modal-header">
               <span>
@@ -1230,16 +1217,20 @@ export default function Sidebar({
               </span>
 
               <button
+                type="button"
                 className="group-modal-close"
                 onClick={
                   closeGroupModal
                 }
+                aria-label="Close group modal"
               >
                 ✕
               </button>
             </div>
 
+            {/* ================================================= */}
             {/* GROUP NAME */}
+            {/* ================================================= */}
 
             <input
               className="group-name-input"
@@ -1254,7 +1245,9 @@ export default function Sidebar({
               autoFocus
             />
 
+            {/* ================================================= */}
             {/* MEMBERS LABEL */}
+            {/* ================================================= */}
 
             <div className="group-members-label">
               Add members (
@@ -1264,7 +1257,116 @@ export default function Sidebar({
               selected)
             </div>
 
+            {/* ================================================= */}
+            {/* MEMBER SEARCH */}
+            {/* ================================================= */}
+
+            <div
+              className="group-member-search"
+              style={{
+                position:
+                  "relative",
+                margin:
+                  "0 16px 10px",
+              }}
+            >
+              <span
+                style={{
+                  position:
+                    "absolute",
+                  left:
+                    "13px",
+                  top:
+                    "50%",
+                  transform:
+                    "translateY(-50%)",
+                  opacity:
+                    0.55,
+                  fontSize:
+                    "15px",
+                  pointerEvents:
+                    "none",
+                }}
+              >
+                ⌕
+              </span>
+
+              <input
+                type="text"
+                value={
+                  groupMemberSearch
+                }
+                onChange={(e) =>
+                  setGroupMemberSearch(
+                    e.target.value
+                  )
+                }
+                placeholder="Search members..."
+                aria-label="Search members for group"
+                style={{
+                  width:
+                    "100%",
+                  height:
+                    "42px",
+                  boxSizing:
+                    "border-box",
+                  padding:
+                    "0 38px",
+                  border:
+                    "1px solid rgba(255,255,255,0.10)",
+                  borderRadius:
+                    "11px",
+                  outline:
+                    "none",
+                  background:
+                    "rgba(255,255,255,0.035)",
+                  color:
+                    "inherit",
+                  fontSize:
+                    "13px",
+                }}
+              />
+
+              {groupMemberSearch && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    setGroupMemberSearch(
+                      ""
+                    )
+                  }
+                  aria-label="Clear member search"
+                  style={{
+                    position:
+                      "absolute",
+                    right:
+                      "8px",
+                    top:
+                      "50%",
+                    transform:
+                      "translateY(-50%)",
+                    border:
+                      "0",
+                    background:
+                      "transparent",
+                    color:
+                      "inherit",
+                    opacity:
+                      0.6,
+                    cursor:
+                      "pointer",
+                    fontSize:
+                      "16px",
+                  }}
+                >
+                  ×
+                </button>
+              )}
+            </div>
+
+            {/* ================================================= */}
             {/* MEMBER LIST */}
+            {/* ================================================= */}
 
             <div className="group-members-list">
               {allUsersLoading ? (
@@ -1298,8 +1400,24 @@ export default function Sidebar({
                 >
                   No users available
                 </div>
+              ) : filteredGroupMembers.length ===
+                0 ? (
+                <div
+                  style={{
+                    padding:
+                      "16px",
+                    opacity:
+                      0.6,
+                    textAlign:
+                      "center",
+                    fontSize:
+                      "13px",
+                  }}
+                >
+                  No member found
+                </div>
               ) : (
-                normalizedAllUsers.map(
+                filteredGroupMembers.map(
                   (contact) => {
                     const checked =
                       selectedMemberIds.includes(
@@ -1307,6 +1425,15 @@ export default function Sidebar({
                           contact.id
                         )
                       );
+
+                    const username =
+                      contact.username ||
+                      contact.name ||
+                      "User";
+
+                    const email =
+                      contact.email ||
+                      "";
 
                     return (
                       <div
@@ -1323,21 +1450,80 @@ export default function Sidebar({
                             contact.id
                           )
                         }
+                        role="button"
+                        tabIndex={0}
+                        onKeyDown={(e) => {
+                          if (
+                            e.key ===
+                              "Enter" ||
+                            e.key ===
+                              " "
+                          ) {
+                            e.preventDefault();
+
+                            toggleMember(
+                              contact.id
+                            );
+                          }
+                        }}
                       >
+                        {/* AVATAR */}
+
                         <div className="group-member-avatar">
-                          {contact.username
-                            ?.charAt(
+                          {username
+                            .charAt(
                               0
                             )
-                            ?.toUpperCase() ||
-                            "U"}
+                            .toUpperCase()}
                         </div>
 
-                        <div className="group-member-name">
-                          {
-                            contact.username
-                          }
+                        {/* USER INFO */}
+
+                        <div
+                          className="group-member-name"
+                          style={{
+                            minWidth:
+                              0,
+                            flex:
+                              1,
+                          }}
+                        >
+                          <div
+                            style={{
+                              overflow:
+                                "hidden",
+                              textOverflow:
+                                "ellipsis",
+                              whiteSpace:
+                                "nowrap",
+                            }}
+                          >
+                            {username}
+                          </div>
+
+                          {email && (
+                            <div
+                              style={{
+                                marginTop:
+                                  "2px",
+                                fontSize:
+                                  "11px",
+                                opacity:
+                                  0.5,
+                                overflow:
+                                  "hidden",
+                                textOverflow:
+                                  "ellipsis",
+                                whiteSpace:
+                                  "nowrap",
+                              }}
+                            >
+                              {email}
+                            </div>
+                          )}
                         </div>
+
+                        {/* CHECKBOX */}
 
                         <input
                           type="checkbox"
@@ -1354,10 +1540,13 @@ export default function Sidebar({
               )}
             </div>
 
+            {/* ================================================= */}
             {/* ACTIONS */}
+            {/* ================================================= */}
 
             <div className="group-modal-actions">
               <button
+                type="button"
                 className="group-modal-cancel"
                 onClick={
                   closeGroupModal
@@ -1367,6 +1556,7 @@ export default function Sidebar({
               </button>
 
               <button
+                type="button"
                 className="group-modal-create"
                 disabled={
                   !groupName.trim() ||
