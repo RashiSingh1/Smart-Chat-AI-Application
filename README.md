@@ -234,7 +234,8 @@ Smart-Chat-AI-Application/
 
 **Rashi Kumari**
 
-GitHub: @RashiSingh1 · LinkedIn: [linkedin.com/in/rashi-kumari-15987a321]
+- GitHub: [@RashiSingh1](https://github.com/RashiSingh1)
+- LinkedIn: [linkedin.com/in/rashi-kumari-15987a321](https://www.linkedin.com/in/rashi-kumari-15987a321/)
 
 ---
 
