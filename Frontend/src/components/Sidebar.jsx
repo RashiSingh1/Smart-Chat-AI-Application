@@ -3,7 +3,7 @@ import API from "../services/api";
 import UserCard from "./UserCard";
 
 // =====================================================
-// CONVERT ANY TIMESTAMP FORMAT INTO MILLISECONDS
+// NORMALIZE TIMESTAMP
 // Supports:
 // - Unix seconds
 // - Unix milliseconds
@@ -20,28 +20,23 @@ function normalizeTimestamp(timestamp) {
     return 0;
   }
 
-  // Already a Date object
   if (timestamp instanceof Date) {
     const time = timestamp.getTime();
     return Number.isNaN(time) ? 0 : time;
   }
 
-  // Numeric timestamp
   if (typeof timestamp === "number") {
     if (timestamp <= 0) {
       return 0;
     }
 
-    // Unix seconds -> milliseconds
     if (timestamp < 100000000000) {
       return timestamp * 1000;
     }
 
-    // Already milliseconds
     return timestamp;
   }
 
-  // Numeric string
   if (
     typeof timestamp === "string" &&
     /^\d+$/.test(timestamp.trim())
@@ -52,7 +47,6 @@ function normalizeTimestamp(timestamp) {
       return 0;
     }
 
-    // Unix seconds -> milliseconds
     if (numericTimestamp < 100000000000) {
       return numericTimestamp * 1000;
     }
@@ -60,7 +54,6 @@ function normalizeTimestamp(timestamp) {
     return numericTimestamp;
   }
 
-  // ISO / normal date string
   const parsedDate = new Date(timestamp);
   const time = parsedDate.getTime();
 
@@ -77,7 +70,8 @@ function normalizeTimestamp(timestamp) {
 // =====================================================
 
 export function getSidebarTimeLabel(timestamp) {
-  const normalizedTimestamp = normalizeTimestamp(timestamp);
+  const normalizedTimestamp =
+    normalizeTimestamp(timestamp);
 
   if (!normalizedTimestamp) {
     return "";
@@ -114,14 +108,17 @@ export function getSidebarTimeLabel(timestamp) {
 
   const yesterday = new Date(now);
 
+  yesterday.setHours(0, 0, 0, 0);
   yesterday.setDate(yesterday.getDate() - 1);
 
-  const isYesterday =
-    date.getFullYear() === yesterday.getFullYear() &&
-    date.getMonth() === yesterday.getMonth() &&
-    date.getDate() === yesterday.getDate();
+  const messageDay = new Date(date);
 
-  if (isYesterday) {
+  messageDay.setHours(0, 0, 0, 0);
+
+  if (
+    messageDay.getTime() ===
+    yesterday.getTime()
+  ) {
     return "Yesterday";
   }
 
@@ -130,26 +127,37 @@ export function getSidebarTimeLabel(timestamp) {
   // ===================================================
 
   const isSameYear =
-    date.getFullYear() === now.getFullYear();
+    date.getFullYear() ===
+    now.getFullYear();
 
   return date.toLocaleDateString([], {
     day: "2-digit",
     month: "short",
-    ...(isSameYear ? {} : { year: "numeric" }),
+    ...(isSameYear
+      ? {}
+      : { year: "numeric" }),
   });
 }
 
 // =====================================================
 // GET LAST MESSAGE TIMESTAMP
-// Handles multiple possible backend field names
+// Handles multiple backend field names
 // =====================================================
 
 function getLastMessageTimestamp(item) {
+  if (!item) {
+    return 0;
+  }
+
   return (
-    item?.lastMessageTimestamp ??
-    item?.last_message_timestamp ??
-    item?.lastMessageTime ??
-    item?.last_message_time ??
+    item.lastMessageTimestamp ??
+    item.last_message_timestamp ??
+    item.lastMessageAt ??
+    item.last_message_at ??
+    item.lastMessageDate ??
+    item.last_message_date ??
+    item.lastMessageTime ??
+    item.last_message_time ??
     0
   );
 }
@@ -184,6 +192,7 @@ function normalizeUser(user) {
 
     avatarUrl:
       user.avatarUrl ||
+      user.avatar_url ||
       "",
 
     isOnline:
@@ -202,6 +211,43 @@ function normalizeUser(user) {
   };
 }
 
+// =====================================================
+// MUTED AVATAR SLASH OVERLAY
+// Single diagonal line across the avatar, matching
+// the ChatHeader's muted-avatar treatment (no emoji).
+// =====================================================
+
+function MutedAvatarSlash() {
+  return (
+    <span
+      aria-label="Muted"
+      style={{
+        position: "absolute",
+        inset: 0,
+        pointerEvents: "none",
+        overflow: "hidden",
+        borderRadius: "inherit",
+      }}
+    >
+      <span
+        style={{
+          position: "absolute",
+          top: "50%",
+          left: "50%",
+          width: "140%",
+          height: "1.5px",
+          background: "rgba(255,255,255,0.85)",
+          transform: "translate(-50%, -50%) rotate(-45deg)",
+        }}
+      />
+    </span>
+  );
+}
+
+// =====================================================
+// SIDEBAR
+// =====================================================
+
 export default function Sidebar({
   contacts = [],
   groups = [],
@@ -212,20 +258,26 @@ export default function Sidebar({
   onSelectGroup,
   onCreateGroup,
 
-  // Optional external all-users data.
-  // If not supplied, Sidebar loads /users itself.
-  allUsers = [],
+  // =====================================================
+  // MUTED CHAT IDS
+  // =====================================================
 
-  // These props are kept for compatibility with your
-  // previous Sidebar implementation.
-  searchResults: externalSearchResults = [],
-  searchLoading: externalSearchLoading = false,
+  mutedUserIds = new Set(),
+  mutedGroupIds = new Set(),
+
+  // Optional externally supplied search data
+  searchResults:
+    externalSearchResults = [],
+
+  searchLoading:
+    externalSearchLoading = false,
+
   onSearchUsers,
   onClearSearch,
 }) {
-  // =====================================================
-  // CREATE GROUP MODAL STATE
-  // =====================================================
+  // ===================================================
+  // CREATE GROUP STATE
+  // ===================================================
 
   const [showGroupModal, setShowGroupModal] =
     useState(false);
@@ -236,11 +288,15 @@ export default function Sidebar({
   const [selectedMemberIds, setSelectedMemberIds] =
     useState([]);
 
-  // =====================================================
-  // CREATE GROUP MEMBER SEARCH STATE
-  // Uses the SAME /users/search endpoint as the
-  // sidebar search. We do not depend on /users here.
-  // =====================================================
+  const [groupCreateSubmitting, setGroupCreateSubmitting] =
+    useState(false);
+
+  const [groupCreateError, setGroupCreateError] =
+    useState("");
+
+  // ===================================================
+  // GROUP MEMBER SEARCH
+  // ===================================================
 
   const [groupMemberSearch, setGroupMemberSearch] =
     useState("");
@@ -254,9 +310,9 @@ export default function Sidebar({
   const [groupMemberSearchError, setGroupMemberSearchError] =
     useState("");
 
-  // =====================================================
-  // USER SEARCH STATE
-  // =====================================================
+  // ===================================================
+  // USER SEARCH
+  // ===================================================
 
   const [searchQuery, setSearchQuery] =
     useState("");
@@ -270,103 +326,20 @@ export default function Sidebar({
   const [searchError, setSearchError] =
     useState("");
 
-  // =====================================================
-  // ALL REGISTERED USERS
-  // Used for Create Group.
+  // ===================================================
+  // GROUP MEMBER SEARCH
   //
   // IMPORTANT:
-  // This is separate from contacts/conversations.
-  // Therefore a user without any chat can still be found.
-  // =====================================================
-
-  const [loadedAllUsers, setLoadedAllUsers] =
-    useState([]);
-
-  const [allUsersLoading, setAllUsersLoading] =
-    useState(false);
-
-  // =====================================================
-  // LOAD ALL REGISTERED USERS
-  // =====================================================
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function loadAllRegisteredUsers() {
-      // If parent already supplied users, no need to
-      // make another /users request.
-      if (
-        Array.isArray(allUsers) &&
-        allUsers.length > 0
-      ) {
-        return;
-      }
-
-      try {
-        setAllUsersLoading(true);
-
-        const response =
-          await API.get("/users");
-
-        if (cancelled) {
-          return;
-        }
-
-        const normalized =
-          (response.data || [])
-            .map(normalizeUser)
-            .filter(Boolean);
-
-        setLoadedAllUsers(normalized);
-      } catch (error) {
-        if (!cancelled) {
-          console.log(
-            "Unable to load registered users:",
-            error
-          );
-
-          setLoadedAllUsers([]);
-        }
-      } finally {
-        if (!cancelled) {
-          setAllUsersLoading(false);
-        }
-      }
-    }
-
-    loadAllRegisteredUsers();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [allUsers]);
-
-  // =====================================================
-  // EFFECTIVE ALL USERS
-  // =====================================================
-
-  const normalizedAllUsers = useMemo(() => {
-    const source =
-      Array.isArray(allUsers) &&
-      allUsers.length > 0
-        ? allUsers
-        : loadedAllUsers;
-
-    return source
-      .map(normalizeUser)
-      .filter(Boolean);
-  }, [allUsers, loadedAllUsers]);
-
-  // =====================================================
-  // CREATE GROUP MEMBER SEARCH
+  // This uses ONLY:
   //
-  // This intentionally uses the exact same backend
-  // endpoint as the sidebar user search:
   // GET /users/search?q=...
-  // =====================================================
+  //
+  // It does NOT call /users.
+  // ===================================================
 
   useEffect(() => {
-    const query = groupMemberSearch.trim();
+    const query =
+      groupMemberSearch.trim();
 
     if (!query) {
       setGroupMemberResults([]);
@@ -377,37 +350,62 @@ export default function Sidebar({
 
     let cancelled = false;
 
-    const timer = setTimeout(async () => {
-      try {
-        setGroupMemberSearchLoading(true);
-        setGroupMemberSearchError("");
+    const timer = setTimeout(
+      async () => {
+        try {
+          setGroupMemberSearchLoading(true);
+          setGroupMemberSearchError("");
 
-        const response = await API.get("/users/search", {
-          params: { q: query },
-        });
+          const response =
+            await API.get(
+              "/users/search",
+              {
+                params: {
+                  q: query,
+                },
+              }
+            );
 
-        if (cancelled) return;
+          if (cancelled) {
+            return;
+          }
 
-        const results = (response.data || [])
-          .map(normalizeUser)
-          .filter(Boolean);
+          const results =
+            Array.isArray(response.data)
+              ? response.data
+                  .map(normalizeUser)
+                  .filter(Boolean)
+              : [];
 
-        setGroupMemberResults(results);
-      } catch (error) {
-        if (cancelled) return;
+          setGroupMemberResults(
+            results
+          );
+        } catch (error) {
+          if (cancelled) {
+            return;
+          }
 
-        console.log("Unable to search group members:", error);
-        setGroupMemberResults([]);
-        setGroupMemberSearchError(
-          error.response?.data?.detail ||
-            "Unable to search users"
-        );
-      } finally {
-        if (!cancelled) {
-          setGroupMemberSearchLoading(false);
+          console.error(
+            "Unable to search group members:",
+            error
+          );
+
+          setGroupMemberResults([]);
+
+          setGroupMemberSearchError(
+            error?.response?.data?.detail ||
+              "Unable to search users"
+          );
+        } finally {
+          if (!cancelled) {
+            setGroupMemberSearchLoading(
+              false
+            );
+          }
         }
-      }
-    }, 250);
+      },
+      300
+    );
 
     return () => {
       cancelled = true;
@@ -415,27 +413,27 @@ export default function Sidebar({
     };
   }, [groupMemberSearch]);
 
-  // =====================================================
-  // SEARCH USERS
+  // ===================================================
+  // USER SEARCH
   //
   // IMPORTANT:
-  // This searches ALL REGISTERED USERS, not only
-  // existing conversations.
+  // No automatic GET /users request.
   //
-  // Backend endpoint:
-  // GET /users/search?q=isha
-  // =====================================================
+  // Only GET /users/search?q=...
+  // ===================================================
 
   useEffect(() => {
     const query =
       searchQuery.trim();
 
-    // Empty search
     if (!query) {
       setInternalSearchResults([]);
       setSearchError("");
+      setInternalSearchLoading(false);
 
-      onClearSearch?.();
+      if (typeof onClearSearch === "function") {
+        onClearSearch();
+      }
 
       return;
     }
@@ -448,15 +446,25 @@ export default function Sidebar({
           setInternalSearchLoading(true);
           setSearchError("");
 
-          // If parent provides search handler,
-          // preserve compatibility with it.
-          if (onSearchUsers) {
+          // =================================================
+          // PARENT SEARCH HANDLER
+          // =================================================
+
+          if (
+            typeof onSearchUsers ===
+            "function"
+          ) {
             await onSearchUsers(query);
+
+            if (!cancelled) {
+              setInternalSearchLoading(false);
+            }
+
             return;
           }
 
           // =================================================
-          // DIRECT BACKEND SEARCH
+          // DIRECT SEARCH
           // =================================================
 
           const response =
@@ -474,9 +482,11 @@ export default function Sidebar({
           }
 
           const results =
-            (response.data || [])
-              .map(normalizeUser)
-              .filter(Boolean);
+            Array.isArray(response.data)
+              ? response.data
+                  .map(normalizeUser)
+                  .filter(Boolean)
+              : [];
 
           setInternalSearchResults(
             results
@@ -486,7 +496,7 @@ export default function Sidebar({
             return;
           }
 
-          console.log(
+          console.error(
             "Unable to search users:",
             error
           );
@@ -494,16 +504,18 @@ export default function Sidebar({
           setInternalSearchResults([]);
 
           setSearchError(
-            error.response?.data?.detail ||
+            error?.response?.data?.detail ||
               "Unable to search users"
           );
         } finally {
           if (!cancelled) {
-            setInternalSearchLoading(false);
+            setInternalSearchLoading(
+              false
+            );
           }
         }
       },
-      250
+      300
     );
 
     return () => {
@@ -516,23 +528,25 @@ export default function Sidebar({
     onClearSearch,
   ]);
 
-  // =====================================================
+  // ===================================================
   // FINAL SEARCH RESULTS
-  // =====================================================
+  // ===================================================
 
   const searchResults =
-    onSearchUsers
+    typeof onSearchUsers ===
+    "function"
       ? externalSearchResults || []
       : internalSearchResults;
 
   const searchLoading =
-    onSearchUsers
+    typeof onSearchUsers ===
+    "function"
       ? externalSearchLoading
       : internalSearchLoading;
 
-  // =====================================================
+  // ===================================================
   // SEARCH INPUT
-  // =====================================================
+  // ===================================================
 
   function handleSearchChange(event) {
     setSearchQuery(
@@ -540,241 +554,293 @@ export default function Sidebar({
     );
   }
 
-  // =====================================================
+  // ===================================================
   // CLEAR SEARCH
-  // =====================================================
+  // ===================================================
 
   function clearUserSearch() {
     setSearchQuery("");
-
     setInternalSearchResults([]);
-
     setSearchError("");
 
-    onClearSearch?.();
+    if (
+      typeof onClearSearch ===
+      "function"
+    ) {
+      onClearSearch();
+    }
   }
 
-  // =====================================================
+  // ===================================================
   // SELECT SEARCH USER
-  // =====================================================
+  // ===================================================
 
   function handleSearchUserSelect(user) {
     if (!user) {
       return;
     }
 
-    // Close search first
     clearUserSearch();
 
-    // Open/start 1-to-1 chat
     onSelectContact?.({
-      ...user,
-
-      id: Number(user.id),
-
-      username:
-        user.username ||
-        user.name ||
-        "User",
-
-      name:
-        user.name ||
-        user.username ||
-        "User",
-
-      email:
-        user.email ||
-        "",
-
-      isOnline:
-        user.isOnline === true ||
-        user.is_online === true,
-
-      lastMessage:
-        user.lastMessage ||
-        "",
+      ...normalizeUser(user),
 
       lastMessageTimestamp:
         normalizeTimestamp(
-          user.lastMessageTimestamp
+          getLastMessageTimestamp(
+            user
+          )
         ),
     });
   }
 
-  // =====================================================
+  // ===================================================
   // OPEN GROUP MODAL
-  // =====================================================
+  // ===================================================
 
   function openGroupModal() {
     setGroupName("");
     setSelectedMemberIds([]);
+
     setGroupMemberSearch("");
     setGroupMemberResults([]);
     setGroupMemberSearchError("");
+
+    setGroupCreateError("");
+    setGroupCreateSubmitting(false);
+
     setShowGroupModal(true);
   }
 
-  // =====================================================
+  // ===================================================
   // CLOSE GROUP MODAL
-  // =====================================================
+  // ===================================================
 
   function closeGroupModal() {
+    if (groupCreateSubmitting) {
+      return;
+    }
+
     setShowGroupModal(false);
+
     setGroupMemberSearch("");
     setGroupMemberResults([]);
     setGroupMemberSearchError("");
-    setGroupMemberSearchLoading(false);
+
+    setGroupCreateError("");
+    setGroupCreateSubmitting(false);
   }
 
-  // =====================================================
-  // TOGGLE MEMBER
-  // =====================================================
+  // ===================================================
+  // TOGGLE GROUP MEMBER
+  // ===================================================
 
   function toggleMember(contactId) {
     const id = Number(contactId);
 
-    setSelectedMemberIds((prev) =>
-      prev.includes(id)
-        ? prev.filter(
-            (memberId) =>
-              memberId !== id
-          )
-        : [
-            ...prev,
-            id,
-          ]
-    );
+    if (!Number.isFinite(id)) {
+      return;
+    }
+
+    setSelectedMemberIds((previous) => {
+      if (previous.includes(id)) {
+        return previous.filter(
+          (memberId) =>
+            memberId !== id
+        );
+      }
+
+      return [
+        ...previous,
+        id,
+      ];
+    });
   }
 
-  // =====================================================
+  // ===================================================
   // CREATE GROUP
-  // =====================================================
+  // ===================================================
 
-  function handleCreateGroupSubmit() {
+  async function handleCreateGroupSubmit() {
     const trimmedName =
       groupName.trim();
 
+    setGroupCreateError("");
+
     if (!trimmedName) {
+      setGroupCreateError(
+        "Group name is required"
+      );
       return;
     }
 
     if (
-      selectedMemberIds.length === 0
+      selectedMemberIds.length ===
+      0
     ) {
+      setGroupCreateError(
+        "Select at least one member"
+      );
       return;
     }
 
-    onCreateGroup?.(
-      trimmedName,
-      selectedMemberIds
-    );
+    if (
+      typeof onCreateGroup !==
+      "function"
+    ) {
+      setGroupCreateError(
+        "Create group is not connected."
+      );
+      return;
+    }
 
-    closeGroupModal();
+    try {
+      setGroupCreateSubmitting(true);
+
+      await onCreateGroup(
+        trimmedName,
+        selectedMemberIds
+      );
+
+      setShowGroupModal(false);
+      setGroupName("");
+      setSelectedMemberIds([]);
+
+      setGroupMemberSearch("");
+      setGroupMemberResults([]);
+      setGroupMemberSearchError("");
+      setGroupCreateError("");
+    } catch (error) {
+      console.error(
+        "Unable to create group:",
+        error
+      );
+
+      setGroupCreateError(
+        error?.response?.data?.detail ||
+          error?.message ||
+          "Unable to create group"
+      );
+    } finally {
+      setGroupCreateSubmitting(false);
+    }
   }
 
-  // =====================================================
+  // ===================================================
   // NORMALIZE CONTACTS
-  // =====================================================
+  // ===================================================
 
   const normalizedContacts =
-    contacts
-      .filter(
-        (contact) =>
-          contact &&
-          contact.id != null
-      )
-      .map((contact) => {
-        const timestamp =
-          getLastMessageTimestamp(
-            contact
-          );
+  contacts
+    .filter(
+      (contact) =>
+        contact &&
+        contact.id != null
+    )
+    .map((contact) => {
+      const timestamp =
+        getLastMessageTimestamp(
+          contact
+        );
 
-        return {
-          ...contact,
+      return {
+        ...contact,
 
-          id: Number(contact.id),
-
-          lastMessageTimestamp:
-            normalizeTimestamp(
-              timestamp
-            ),
-
-          sidebarTimeLabel:
-            getSidebarTimeLabel(
-              timestamp
-            ),
-        };
-      });
-
-  // =====================================================
-  // NORMALIZE GROUPS
-  // =====================================================
-
-  const normalizedGroups =
-    groups
-      .filter(
-        (group) =>
-          group &&
-          group.id != null
-      )
-      .map((group) => {
-        const timestamp =
-          getLastMessageTimestamp(
-            group
-          );
-
-        return {
-          ...group,
-
-          id: Number(group.id),
-
-          lastMessageTimestamp:
-            normalizeTimestamp(
-              timestamp
-            ),
-
-          sidebarTimeLabel:
-            getSidebarTimeLabel(
-              timestamp
-            ),
-        };
-      });
-
-  // =====================================================
-  // MERGE GROUPS + CONTACTS
-  // SORT BY LAST MESSAGE
-  // =====================================================
-
-  const combinedList = [
-    ...normalizedGroups.map(
-      (group) => ({
-        type: "group",
-        id: Number(group.id),
-        data: group,
-        timestamp:
-          group.lastMessageTimestamp,
-      })
-    ),
-
-    ...normalizedContacts.map(
-      (contact) => ({
-        type: "user",
         id: Number(contact.id),
-        data: contact,
-        timestamp:
-          contact.lastMessageTimestamp,
-      })
-    ),
-  ].sort((a, b) => {
-    return (
-      b.timestamp -
-      a.timestamp
-    );
-  });
 
-  // =====================================================
+        lastMessageTimestamp:
+          normalizeTimestamp(
+            timestamp
+          ),
+
+        sidebarTimeLabel:
+          getSidebarTimeLabel(
+            timestamp
+          ),
+      };
+    });
+
+  // ===================================================
+  // NORMALIZE GROUPS
+  // ===================================================
+
+ const normalizedGroups =
+  groups
+    .filter(
+      (group) =>
+        group &&
+        group.id != null
+    )
+    .map((group) => {
+      const timestamp =
+        getLastMessageTimestamp(
+          group
+        );
+
+      return {
+        ...group,
+
+        id: Number(group.id),
+
+        lastMessageTimestamp:
+          normalizeTimestamp(
+            timestamp
+          ),
+
+        sidebarTimeLabel:
+          getSidebarTimeLabel(
+            timestamp
+          ),
+      };
+    });
+
+  // ===================================================
+  // MERGE + SORT
+  // ===================================================
+
+  const combinedList =
+    useMemo(() => {
+      const list = [
+        ...normalizedGroups.map(
+          (group) => ({
+            type: "group",
+            id: Number(
+              group.id
+            ),
+            data: group,
+            timestamp:
+              group.lastMessageTimestamp ||
+              0,
+          })
+        ),
+
+        ...normalizedContacts.map(
+          (contact) => ({
+            type: "user",
+            id: Number(
+              contact.id
+            ),
+            data: contact,
+            timestamp:
+              contact.lastMessageTimestamp ||
+              0,
+          })
+        ),
+      ];
+
+      return list.sort(
+        (a, b) =>
+          b.timestamp -
+          a.timestamp
+      );
+    }, [
+      normalizedGroups,
+      normalizedContacts,
+    ]);
+
+  // ===================================================
   // RENDER
-  // =====================================================
+  // ===================================================
 
   return (
     <aside
@@ -855,11 +921,11 @@ export default function Sidebar({
               handleSearchChange
             }
             placeholder="Search users by name or email..."
-            aria-label="Search registered users by name or email"
+            aria-label="Search registered users"
             style={{
               width: "100%",
-              border: "0",
-              outline: "0",
+              border: 0,
+              outline: 0,
               background:
                 "transparent",
               color: "inherit",
@@ -880,7 +946,8 @@ export default function Sidebar({
                   "transparent",
                 color: "inherit",
                 opacity: 0.65,
-                cursor: "pointer",
+                cursor:
+                  "pointer",
                 fontSize: "16px",
               }}
             >
@@ -907,14 +974,13 @@ export default function Sidebar({
               overflow: "hidden",
               maxHeight:
                 "280px",
-              overflowY: "auto",
+              overflowY:
+                "auto",
               position:
                 "relative",
               zIndex: 100,
             }}
           >
-            {/* SEARCHING */}
-
             {searchLoading ? (
               <div
                 style={{
@@ -930,8 +996,6 @@ export default function Sidebar({
                 Searching...
               </div>
             ) : searchError ? (
-              /* ERROR */
-
               <div
                 style={{
                   padding:
@@ -947,8 +1011,6 @@ export default function Sidebar({
               </div>
             ) : searchResults.length ===
               0 ? (
-              /* NO RESULTS */
-
               <div
                 style={{
                   padding:
@@ -963,32 +1025,33 @@ export default function Sidebar({
                 No registered user found
               </div>
             ) : (
-              /* RESULTS */
-
               searchResults.map(
                 (user) => {
+                  const normalized =
+                    normalizeUser(
+                      user
+                    );
+
+                  if (!normalized) {
+                    return null;
+                  }
+
                   const username =
-                    user.username ||
-                    user.name ||
-                    "User";
+                    normalized.username;
 
                   const email =
-                    user.email ||
-                    "";
+                    normalized.email;
 
                   const isOnline =
-                    user.isOnline ===
-                      true ||
-                    user.is_online ===
-                      true;
+                    normalized.isOnline;
 
                   return (
                     <button
-                      key={`search-${user.id}`}
+                      key={`search-${normalized.id}`}
                       type="button"
                       onClick={() =>
                         handleSearchUserSelect(
-                          user
+                          normalized
                         )
                       }
                       style={{
@@ -1014,8 +1077,6 @@ export default function Sidebar({
                           "pointer",
                       }}
                     >
-                      {/* AVATAR */}
-
                       <span
                         style={{
                           width:
@@ -1030,8 +1091,7 @@ export default function Sidebar({
                             "center",
                           background:
                             "rgba(255,255,255,0.08)",
-                          flexShrink:
-                            0,
+                          flexShrink: 0,
                           fontWeight:
                             600,
                           position:
@@ -1043,8 +1103,6 @@ export default function Sidebar({
                             0
                           )
                           .toUpperCase()}
-
-                        {/* ONLINE DOT */}
 
                         {isOnline && (
                           <span
@@ -1069,8 +1127,6 @@ export default function Sidebar({
                           />
                         )}
                       </span>
-
-                      {/* USER INFO */}
 
                       <span
                         style={{
@@ -1153,10 +1209,13 @@ export default function Sidebar({
       <div
         className="sidebar-chats"
         style={{
-          flex: "1 1 auto",
+          flex:
+            "1 1 auto",
           minHeight: 0,
-          overflowY: "auto",
-          overflowX: "hidden",
+          overflowY:
+            "auto",
+          overflowX:
+            "hidden",
           scrollbarWidth:
             "thin",
         }}
@@ -1174,18 +1233,26 @@ export default function Sidebar({
               const group =
                 item.data;
 
+              const isSelected =
+                chatType ===
+                  "group" &&
+                Number(
+                  group.id
+                ) ===
+                  Number(
+                    selectedGroupId
+                  );
+
+              const isGroupMutedNow =
+                mutedGroupIds.has(
+                  Number(group.id)
+                );
+
               return (
                 <div
                   key={`group-${group.id}`}
                   className={`group-card ${
-                    chatType ===
-                      "group" &&
-                    Number(
-                      group.id
-                    ) ===
-                      Number(
-                        selectedGroupId
-                      )
+                    isSelected
                       ? "selected"
                       : ""
                   }`}
@@ -1195,13 +1262,38 @@ export default function Sidebar({
                     )
                   }
                 >
-                  <div className="group-avatar">
-                    {group.name
-                      ?.charAt(
-                        0
-                      )
-                      ?.toUpperCase() ||
-                      "G"}
+                  <div
+                    className="sidebar-avatar-wrapper"
+                    style={{
+                      position:
+                        "relative",
+                      width:
+                        "46px",
+                      height:
+                        "46px",
+                      flexShrink: 0,
+                    }}
+                  >
+                    <div
+                      className="group-avatar"
+                      style={{
+                        position: "relative",
+                        width: "100%",
+                        height: "100%",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        overflow: "hidden",
+                      }}
+                    >
+                      {group.name
+                        ?.charAt(0)
+                        ?.toUpperCase() || "G"}
+
+                      {isGroupMutedNow && (
+                        <MutedAvatarSlash />
+                      )}
+                    </div>
                   </div>
 
                   <div className="group-info">
@@ -1221,9 +1313,8 @@ export default function Sidebar({
                     </div>
 
                     <div className="group-label">
-                      {group.lastMessage
-                        ? group.lastMessage
-                        : "Group"}
+                      {group.lastMessage ||
+                        "Group"}
                     </div>
                   </div>
                 </div>
@@ -1240,23 +1331,14 @@ export default function Sidebar({
             return (
               <UserCard
                 key={`user-${contact.id}`}
-                contact={
-                  contact
-                }
+                contact={contact}
                 selected={
-                  chatType ===
-                    "user" &&
-                  Number(
-                    contact.id
-                  ) ===
-                    Number(
-                      selectedId
-                    )
+                  chatType === "user" &&
+                  Number(contact.id) === Number(selectedId)
                 }
+                isMuted={mutedUserIds.has(Number(contact.id))}
                 onClick={() =>
-                  onSelectContact?.(
-                    contact
-                  )
+                  onSelectContact?.(contact)
                 }
               />
             );
@@ -1264,7 +1346,7 @@ export default function Sidebar({
         )}
 
         {/* ================================================= */}
-        {/* EMPTY CONVERSATION STATE */}
+        {/* EMPTY STATE */}
         {/* ================================================= */}
 
         {combinedList.length ===
@@ -1317,6 +1399,9 @@ export default function Sidebar({
                 onClick={
                   closeGroupModal
                 }
+                disabled={
+                  groupCreateSubmitting
+                }
               >
                 ✕
               </button>
@@ -1351,20 +1436,29 @@ export default function Sidebar({
 
             <div
               style={{
-                position: "relative",
-                margin: "0 16px 10px",
+                position:
+                  "relative",
+                margin:
+                  "0 16px 10px",
                 flexShrink: 0,
               }}
             >
               <span
                 style={{
-                  position: "absolute",
-                  left: "13px",
-                  top: "50%",
-                  transform: "translateY(-50%)",
-                  color: "#8b8b92",
-                  fontSize: "15px",
-                  pointerEvents: "none",
+                  position:
+                    "absolute",
+                  left:
+                    "13px",
+                  top:
+                    "50%",
+                  transform:
+                    "translateY(-50%)",
+                  color:
+                    "#8b8b92",
+                  fontSize:
+                    "15px",
+                  pointerEvents:
+                    "none",
                 }}
               >
                 ⌕
@@ -1372,23 +1466,37 @@ export default function Sidebar({
 
               <input
                 type="text"
-                value={groupMemberSearch}
+                value={
+                  groupMemberSearch
+                }
                 onChange={(e) =>
-                  setGroupMemberSearch(e.target.value)
+                  setGroupMemberSearch(
+                    e.target.value
+                  )
                 }
                 placeholder="Search members by name or email..."
-                aria-label="Search members by name or email"
+                aria-label="Search members"
                 style={{
-                  width: "100%",
-                  height: "44px",
-                  boxSizing: "border-box",
-                  padding: "0 38px",
-                  border: "1px solid rgba(255,255,255,0.10)",
-                  borderRadius: "12px",
-                  outline: "none",
-                  background: "rgba(255,255,255,0.035)",
-                  color: "#eeeeee",
-                  fontSize: "13px",
+                  width:
+                    "100%",
+                  height:
+                    "44px",
+                  boxSizing:
+                    "border-box",
+                  padding:
+                    "0 38px",
+                  border:
+                    "1px solid rgba(255,255,255,0.10)",
+                  borderRadius:
+                    "12px",
+                  outline:
+                    "none",
+                  background:
+                    "rgba(255,255,255,0.035)",
+                  color:
+                    "#eeeeee",
+                  fontSize:
+                    "13px",
                 }}
               />
 
@@ -1396,22 +1504,37 @@ export default function Sidebar({
                 <button
                   type="button"
                   onClick={() => {
-                    setGroupMemberSearch("");
-                    setGroupMemberResults([]);
-                    setGroupMemberSearchError("");
+                    setGroupMemberSearch(
+                      ""
+                    );
+                    setGroupMemberResults(
+                      []
+                    );
+                    setGroupMemberSearchError(
+                      ""
+                    );
                   }}
                   aria-label="Clear member search"
                   style={{
-                    position: "absolute",
-                    right: "9px",
-                    top: "50%",
-                    transform: "translateY(-50%)",
+                    position:
+                      "absolute",
+                    right:
+                      "9px",
+                    top:
+                      "50%",
+                    transform:
+                      "translateY(-50%)",
                     border: 0,
-                    background: "transparent",
-                    color: "#999aa1",
-                    cursor: "pointer",
-                    fontSize: "17px",
-                    padding: "2px",
+                    background:
+                      "transparent",
+                    color:
+                      "#999aa1",
+                    cursor:
+                      "pointer",
+                    fontSize:
+                      "17px",
+                    padding:
+                      "2px",
                   }}
                 >
                   ×
@@ -1424,19 +1547,27 @@ export default function Sidebar({
             <div
               className="group-members-list"
               style={{
-                flex: "1 1 auto",
-                minHeight: 0,
-                overflowY: "auto",
-                overflowX: "hidden",
+                flex:
+                  "1 1 auto",
+                minHeight:
+                  0,
+                overflowY:
+                  "auto",
+                overflowX:
+                  "hidden",
               }}
             >
               {!groupMemberSearch.trim() ? (
                 <div
                   style={{
-                    padding: "28px 16px",
-                    opacity: 0.55,
-                    textAlign: "center",
-                    fontSize: "13px",
+                    padding:
+                      "28px 16px",
+                    opacity:
+                      0.55,
+                    textAlign:
+                      "center",
+                    fontSize:
+                      "13px",
                   }}
                 >
                   Search for a member to add
@@ -1444,10 +1575,14 @@ export default function Sidebar({
               ) : groupMemberSearchLoading ? (
                 <div
                   style={{
-                    padding: "28px 16px",
-                    opacity: 0.6,
-                    textAlign: "center",
-                    fontSize: "13px",
+                    padding:
+                      "28px 16px",
+                    opacity:
+                      0.6,
+                    textAlign:
+                      "center",
+                    fontSize:
+                      "13px",
                   }}
                 >
                   Searching...
@@ -1455,111 +1590,202 @@ export default function Sidebar({
               ) : groupMemberSearchError ? (
                 <div
                   style={{
-                    padding: "28px 16px",
-                    opacity: 0.6,
-                    textAlign: "center",
-                    fontSize: "13px",
+                    padding:
+                      "28px 16px",
+                    opacity:
+                      0.6,
+                    textAlign:
+                      "center",
+                    fontSize:
+                      "13px",
                   }}
                 >
-                  {groupMemberSearchError}
+                  {
+                    groupMemberSearchError
+                  }
                 </div>
-              ) : groupMemberResults.length === 0 ? (
+              ) : groupMemberResults.length ===
+                0 ? (
                 <div
                   style={{
-                    padding: "28px 16px",
-                    opacity: 0.6,
-                    textAlign: "center",
-                    fontSize: "13px",
+                    padding:
+                      "28px 16px",
+                    opacity:
+                      0.6,
+                    textAlign:
+                      "center",
+                    fontSize:
+                      "13px",
                   }}
                 >
                   No registered user found
                 </div>
               ) : (
-                groupMemberResults.map((contact) => {
-                  const contactId = Number(contact.id);
-                  const checked = selectedMemberIds.includes(contactId);
-                  const username =
-                    contact.username ||
-                    contact.name ||
-                    "User";
-                  const email = contact.email || "";
+                groupMemberResults.map(
+                  (contact) => {
+                    const contactId =
+                      Number(
+                        contact.id
+                      );
 
-                  return (
-                    <div
-                      key={contactId}
-                      className={`group-member-row ${
-                        checked ? "checked" : ""
-                      }`}
-                      onClick={() => toggleMember(contactId)}
-                      role="button"
-                      tabIndex={0}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" || e.key === " " ) {
-                          e.preventDefault();
-                          toggleMember(contactId);
+                    const checked =
+                      selectedMemberIds.includes(
+                        contactId
+                      );
+
+                    const username =
+                      contact.username ||
+                      contact.name ||
+                      "User";
+
+                    const email =
+                      contact.email ||
+                      "";
+
+                    return (
+                      <div
+                        key={contactId}
+                        className={`group-member-row ${
+                          checked
+                            ? "checked"
+                            : ""
+                        }`}
+                        onClick={() =>
+                          toggleMember(
+                            contactId
+                          )
                         }
-                      }}
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "10px",
-                        width: "100%",
-                        boxSizing: "border-box",
-                        padding: "10px 12px",
-                        cursor: "pointer",
-                      }}
-                    >
-                      <div
-                        className="group-member-avatar"
-                        style={{ flexShrink: 0 }}
-                      >
-                        {username.charAt(0).toUpperCase()}
-                      </div>
+                        role="button"
+                        tabIndex={0}
+                        onKeyDown={(e) => {
+                          if (
+                            e.key ===
+                              "Enter" ||
+                            e.key ===
+                              " "
+                          ) {
+                            e.preventDefault();
 
-                      <div
-                        className="group-member-name"
+                            toggleMember(
+                              contactId
+                            );
+                          }
+                        }}
                         style={{
-                          minWidth: 0,
-                          flex: 1,
+                          display:
+                            "flex",
+                          alignItems:
+                            "center",
+                          gap:
+                            "10px",
+                          width:
+                            "100%",
+                          boxSizing:
+                            "border-box",
+                          padding:
+                            "10px 12px",
+                          cursor:
+                            "pointer",
                         }}
                       >
                         <div
+                          className="group-member-avatar"
                           style={{
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
-                            whiteSpace: "nowrap",
+                            flexShrink: 0,
                           }}
                         >
-                          {username}
+                          {username
+                            .charAt(
+                              0
+                            )
+                            .toUpperCase()}
                         </div>
 
-                        {email && (
+                        <div
+                          className="group-member-name"
+                          style={{
+                            minWidth: 0,
+                            flex: 1,
+                          }}
+                        >
                           <div
                             style={{
-                              marginTop: "2px",
-                              fontSize: "11px",
-                              opacity: 0.5,
-                              overflow: "hidden",
-                              textOverflow: "ellipsis",
-                              whiteSpace: "nowrap",
+                              overflow:
+                                "hidden",
+                              textOverflow:
+                                "ellipsis",
+                              whiteSpace:
+                                "nowrap",
                             }}
                           >
-                            {email}
+                            {
+                              username
+                            }
                           </div>
-                        )}
-                      </div>
 
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        readOnly
-                        className="group-member-checkbox"
-                      />
-                    </div>
-                  );
-                })
+                          {email && (
+                            <div
+                              style={{
+                                marginTop:
+                                  "2px",
+                                fontSize:
+                                  "11px",
+                                opacity:
+                                  0.5,
+                                overflow:
+                                  "hidden",
+                                textOverflow:
+                                  "ellipsis",
+                                whiteSpace:
+                                  "nowrap",
+                              }}
+                            >
+                              {email}
+                            </div>
+                          )}
+                        </div>
+
+                        <input
+                          type="checkbox"
+                          checked={
+                            checked
+                          }
+                          readOnly
+                          className="group-member-checkbox"
+                        />
+                      </div>
+                    );
+                  }
+                )
               )}
             </div>
+
+            {/* CREATE ERROR */}
+
+            {groupCreateError && (
+              <div
+                style={{
+                  margin:
+                    "0 16px 10px",
+                  padding:
+                    "8px 12px",
+                  borderRadius:
+                    "8px",
+                  background:
+                    "rgba(248, 113, 113, 0.12)",
+                  color:
+                    "#f87171",
+                  fontSize:
+                    "12px",
+                  textAlign:
+                    "center",
+                }}
+              >
+                {
+                  groupCreateError
+                }
+              </div>
+            )}
 
             {/* ACTIONS */}
 
@@ -1568,6 +1794,9 @@ export default function Sidebar({
                 className="group-modal-cancel"
                 onClick={
                   closeGroupModal
+                }
+                disabled={
+                  groupCreateSubmitting
                 }
               >
                 Cancel
@@ -1578,13 +1807,16 @@ export default function Sidebar({
                 disabled={
                   !groupName.trim() ||
                   selectedMemberIds.length ===
-                    0
+                    0 ||
+                  groupCreateSubmitting
                 }
                 onClick={
                   handleCreateGroupSubmit
                 }
               >
-                Create
+                {groupCreateSubmitting
+                  ? "Creating..."
+                  : "Create"}
               </button>
             </div>
           </div>

@@ -293,9 +293,8 @@
 
 @media (max-width: 520px) {
   .auth-card {
-    width: calc(100vw - 32px);
-
-    max-width: 390px;
+           width: calc(98vw - 29px);
+        max-width: 382px;
 
     padding: 28px 24px 25px;
 

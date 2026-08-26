@@ -1,0 +1,345 @@
+/* =====================================================
+   SMOOTH UI — GLOBAL TRANSITIONS
+   =====================================================
+   Import this AFTER chat.css so its rules can layer on
+   top without needing to touch existing selectors:
+
+     import "../styles/chat.css";
+     import "../styles/smooth-ui.css";
+
+   Goal: every hover / click / open / close feels
+   smooth instead of instant/jumpy, site-wide.
+   ===================================================== */
+
+/* -----------------------------------------------------
+   0. BASE EASING VARIABLES
+   ----------------------------------------------------- */
+
+:root {
+  --ease-smooth: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --dur-fast: 120ms;
+  --dur-base: 180ms;
+  --dur-slow: 260ms;
+}
+
+/* Respect users who've asked for less motion. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* -----------------------------------------------------
+   1. UNIVERSAL SMOOTHING
+   Every clickable / hoverable element gets a base
+   transition so color/bg/transform/shadow changes ease
+   instead of snapping.
+   ----------------------------------------------------- */
+
+a,
+button,
+input,
+textarea,
+select,
+[role="button"],
+.user-card,
+.group-card,
+.create-group-item,
+.chat-dropdown-item,
+.header-icon-button,
+.ai-analysis-header-button,
+.group-modal-cancel,
+.group-modal-create,
+.group-modal-close,
+.group-info-close,
+.group-info-mute-button,
+.group-member-row,
+.chat-header-back,
+.chat-header-avatar-wrapper,
+.sidebar-avatar-wrapper,
+.user-card-avatar-wrapper,
+.online-dot,
+.ai-tag-dot,
+.unread-count {
+  transition:
+    background-color var(--dur-base) var(--ease-smooth),
+    color var(--dur-base) var(--ease-smooth),
+    border-color var(--dur-base) var(--ease-smooth),
+    box-shadow var(--dur-base) var(--ease-smooth),
+    opacity var(--dur-base) var(--ease-smooth),
+    transform var(--dur-fast) var(--ease-out);
+}
+
+button,
+[role="button"],
+input[type="checkbox"] {
+  cursor: pointer;
+}
+
+/* -----------------------------------------------------
+   2. HOVER FEEDBACK
+   Subtle lift/press feel on hoverable surfaces.
+   ----------------------------------------------------- */
+
+.user-card:hover,
+.group-card:hover,
+.create-group-item:hover,
+.chat-dropdown-item:hover,
+.group-member-row:hover {
+  background-color: rgba(255, 255, 255, 0.045);
+}
+
+.header-icon-button:hover,
+.chat-header-back:hover,
+.group-modal-close:hover,
+.group-info-close:hover {
+  background-color: rgba(255, 255, 255, 0.08);
+  transform: translateY(-1px);
+}
+
+.ai-analysis-header-button:hover {
+  filter: brightness(1.08);
+  transform: translateY(-1px);
+}
+
+.sidebar-avatar-wrapper:hover,
+.user-card-avatar-wrapper:hover,
+.chat-header-avatar-wrapper:hover {
+  transform: scale(1.03);
+}
+
+/* -----------------------------------------------------
+   3. ACTIVE / PRESS FEEDBACK
+   Gentle "press down" so clicks feel tactile.
+   ----------------------------------------------------- */
+
+button:active,
+[role="button"]:active,
+.user-card:active,
+.group-card:active,
+.chat-dropdown-item:active,
+.group-member-row:active,
+.create-group-item:active {
+  transform: scale(0.97);
+  transition-duration: var(--dur-fast);
+}
+
+/* -----------------------------------------------------
+   4. DISABLED STATE
+   No hover/press motion once disabled.
+   ----------------------------------------------------- */
+
+button:disabled,
+[role="button"][aria-disabled="true"] {
+  cursor: not-allowed;
+  opacity: 0.55;
+  transform: none !important;
+}
+
+/* -----------------------------------------------------
+   5. SELECTED / ACTIVE CHAT ROW
+   Smooth highlight instead of a hard cut when
+   selecting a different conversation.
+   ----------------------------------------------------- */
+
+.user-card,
+.group-card {
+  transition:
+    background-color var(--dur-base) var(--ease-smooth),
+    transform var(--dur-fast) var(--ease-out);
+}
+
+.user-card.selected,
+.group-card.selected {
+  background-color: rgba(255, 255, 255, 0.07);
+}
+
+/* -----------------------------------------------------
+   6. MUTED AVATAR SLASH
+   Fade the slash in/out instead of popping.
+   ----------------------------------------------------- */
+
+.sidebar-avatar-wrapper span[aria-label="Muted"],
+.user-card-avatar-wrapper span[aria-label="Muted"],
+.chat-header-avatar-wrapper span[aria-label="Muted"] {
+  animation: fade-in-slash var(--dur-slow) var(--ease-out);
+}
+
+@keyframes fade-in-slash {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* -----------------------------------------------------
+   7. DROPDOWN MENU (three-dot menu)
+   Slide + fade in instead of appearing instantly.
+   ----------------------------------------------------- */
+
+.chat-dropdown {
+  animation: dropdown-in var(--dur-base) var(--ease-out);
+  transform-origin: top right;
+}
+
+@keyframes dropdown-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.chat-dropdown-backdrop {
+  animation: backdrop-fade-in var(--dur-fast) var(--ease-smooth);
+}
+
+@keyframes backdrop-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* -----------------------------------------------------
+   8. MODALS (Create Group, Group Info)
+   Overlay fades in; modal itself eases up + scales in.
+   ----------------------------------------------------- */
+
+.group-modal-overlay,
+.group-info-overlay {
+  animation: overlay-fade-in var(--dur-base) var(--ease-smooth);
+}
+
+@keyframes overlay-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.group-modal,
+.group-info-modal {
+  animation: modal-in var(--dur-slow) var(--ease-out);
+}
+
+@keyframes modal-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* -----------------------------------------------------
+   9. AI PANEL / MOBILE OVERLAYS
+   ----------------------------------------------------- */
+
+.ai-analysis-overlay {
+  animation: overlay-fade-in var(--dur-base) var(--ease-smooth);
+}
+
+.ai-analysis-overlay-inner {
+  animation: modal-in var(--dur-slow) var(--ease-out);
+}
+
+/* -----------------------------------------------------
+   10. AI ROBOT / MESSAGE NOTIFICATION POPUPS
+   ----------------------------------------------------- */
+
+.ai-robot-popup,
+.ai-message-popup {
+  animation: popup-in var(--dur-slow) var(--ease-out);
+}
+
+@keyframes popup-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* -----------------------------------------------------
+   11. SEARCH RESULTS DROPDOWN
+   ----------------------------------------------------- */
+
+.sidebar-search-results {
+  animation: dropdown-in var(--dur-base) var(--ease-out);
+  transform-origin: top center;
+}
+
+/* -----------------------------------------------------
+   12. SCROLL SMOOTHING
+   ----------------------------------------------------- */
+
+.sidebar-chats,
+.group-members-list,
+.group-info-members-list {
+  scroll-behavior: smooth;
+}
+
+/* -----------------------------------------------------
+   13. IMAGE / MEDIA LOAD-IN
+   Avoid a hard pop when images finish loading.
+   ----------------------------------------------------- */
+
+.user-card-avatar img,
+.chat-header-avatar-wrapper img,
+.group-info-avatar img,
+.group-info-member-avatar img {
+  transition: opacity var(--dur-slow) var(--ease-smooth);
+}
+
+/* -----------------------------------------------------
+   14. TOGGLE / CHECKBOX FEEL
+   ----------------------------------------------------- */
+
+.group-member-checkbox {
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+
+.group-member-row:hover .group-member-checkbox {
+  transform: scale(1.08);
+}
+
+/* -----------------------------------------------------
+   15. UNREAD / AI TAG DOT PULSE-IN
+   ----------------------------------------------------- */
+
+.unread-count,
+.ai-tag-dot {
+  animation: dot-pop var(--dur-base) var(--ease-out);
+}
+
+@keyframes dot-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}

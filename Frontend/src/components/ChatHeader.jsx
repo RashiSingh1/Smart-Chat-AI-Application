@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 
 export default function ChatHeader({
   contact,
@@ -19,7 +19,69 @@ export default function ChatHeader({
   onToggleImportant,
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [menuClosing, setMenuClosing] = useState(false);
   const [infoModalOpen, setInfoModalOpen] = useState(false);
+
+  // =====================================================
+  // MENU REF
+  // =====================================================
+
+  const menuRef = useRef(null);
+
+  // =====================================================
+  // CLOSE MENU WITH ANIMATION
+  // =====================================================
+
+  const closeMenu = () => {
+    if (!menuOpen || menuClosing) {
+      return;
+    }
+
+    setMenuClosing(true);
+  };
+
+  // =====================================================
+  // OPEN / CLOSE MENU
+  // =====================================================
+
+  const handleMenuToggle = () => {
+    if (menuOpen) {
+      closeMenu();
+      return;
+    }
+
+    setMenuClosing(false);
+    setMenuOpen(true);
+  };
+
+  // =====================================================
+  // CLOSE MENU WHEN CLICKING ANYWHERE OUTSIDE
+  // =====================================================
+
+  useEffect(() => {
+    if (!menuOpen) return;
+
+    const handleOutsideClick = (event) => {
+      if (
+        menuRef.current &&
+        !menuRef.current.contains(event.target)
+      ) {
+        closeMenu();
+      }
+    };
+
+    document.addEventListener(
+      "mousedown",
+      handleOutsideClick
+    );
+
+    return () => {
+      document.removeEventListener(
+        "mousedown",
+        handleOutsideClick
+      );
+    };
+  }, [menuOpen, menuClosing]);
 
   // =====================================================
   // NO CONTACT
@@ -50,7 +112,9 @@ export default function ChatHeader({
     group?.name ||
     "Unknown";
 
-  const initial = displayName.charAt(0).toUpperCase();
+  const initial = displayName
+    .charAt(0)
+    .toUpperCase();
 
   // =====================================================
   // MEMBERS
@@ -73,12 +137,13 @@ export default function ChatHeader({
   // =====================================================
 
   const handleMuteClick = async () => {
-    setMenuOpen(false);
+    closeMenu();
 
     if (isGroup) {
       if (onToggleGroupMute) {
         await onToggleGroupMute();
       }
+
       return;
     }
 
@@ -98,7 +163,7 @@ export default function ChatHeader({
       importantStatus
     );
 
-    setMenuOpen(false);
+    closeMenu();
 
     if (!isOneToOne) {
       return;
@@ -118,7 +183,7 @@ export default function ChatHeader({
   // =====================================================
 
   const handleOpenInfo = () => {
-    setMenuOpen(false);
+    closeMenu();
     setInfoModalOpen(true);
   };
 
@@ -129,10 +194,24 @@ export default function ChatHeader({
   const handleOpenAnalysis = () => {
     console.log("🤖 Open AI Analysis clicked");
 
-    setMenuOpen(false);
+    closeMenu();
 
     if (onOpenAnalysis) {
       onOpenAnalysis();
+    }
+  };
+
+  // =====================================================
+  // MENU CLOSE ANIMATION END
+  // =====================================================
+
+  const handleMenuAnimationEnd = (event) => {
+    if (
+      menuClosing &&
+      event.animationName === "chatDropdownClose"
+    ) {
+      setMenuOpen(false);
+      setMenuClosing(false);
     }
   };
 
@@ -177,31 +256,48 @@ export default function ChatHeader({
           {/* ================================================= */}
 
           <div
-            className="user-card-avatar"
+            className="chat-header-avatar-wrapper"
             onClick={
               isGroup
                 ? handleOpenInfo
                 : undefined
             }
             style={{
+              position: "relative",
+              width: "44px",
+              height: "44px",
+              flexShrink: 0,
               cursor: isGroup
                 ? "pointer"
                 : "default",
             }}
           >
-            {contact.avatarUrl ? (
-              <img
-                src={contact.avatarUrl}
-                alt={displayName}
-              />
-            ) : (
-              <div className="avatar-fallback">
-                {initial}
-              </div>
-            )}
+            <div className="user-card-avatar">
+              {contact.avatarUrl ? (
+                <img
+                  src={contact.avatarUrl}
+                  alt={displayName}
+                />
+              ) : (
+                <div className="avatar-fallback">
+                  {initial}
+                </div>
+              )}
 
-            {!isGroup && contact.isOnline && (
-              <span className="online-dot" />
+              {!isGroup && contact.isOnline && (
+                <span className="online-dot" />
+              )}
+            </div>
+
+            {/* MUTED SLASH */}
+
+            {((isGroup && isGroupMuted) ||
+              (isOneToOne && isMuted)) && (
+              <span
+                className="muted-avatar-slash"
+                title="Muted"
+                aria-label="Muted"
+              />
             )}
           </div>
 
@@ -240,34 +336,6 @@ export default function ChatHeader({
                   ⭐
                 </span>
               )}
-
-              {/* ================================================= */}
-              {/* MUTED INDICATOR */}
-              {/* ================================================= */}
-
-              {isOneToOne && isMuted && (
-                <span
-                  style={{
-                    marginLeft: "8px",
-                    fontSize: "0.85rem",
-                  }}
-                  title="Muted"
-                >
-                  🔕
-                </span>
-              )}
-
-              {isGroup && isGroupMuted && (
-                <span
-                  style={{
-                    marginLeft: "8px",
-                    fontSize: "0.85rem",
-                  }}
-                  title="Muted"
-                >
-                  🔕
-                </span>
-              )}
             </h2>
 
             {/* ================================================= */}
@@ -294,7 +362,6 @@ export default function ChatHeader({
                   : "Offline"}
               </span>
             )}
-
           </div>
         </div>
 
@@ -343,7 +410,10 @@ export default function ChatHeader({
           {/* ================================================= */}
 
           <div
-            className="chat-menu-container"
+            ref={menuRef}
+            className={`chat-menu-container ${
+              menuOpen ? "menu-is-open" : ""
+            }`}
             style={{
               position: "relative",
             }}
@@ -355,9 +425,7 @@ export default function ChatHeader({
               className="header-icon-button"
               aria-label="More options"
               type="button"
-              onClick={() =>
-                setMenuOpen((prev) => !prev)
-              }
+              onClick={handleMenuToggle}
             >
               <svg
                 width="20"
@@ -393,155 +461,159 @@ export default function ChatHeader({
             {/* ================================================= */}
 
             {menuOpen && (
-              <>
-                {/* BACKDROP */}
+              <div
+                className={`chat-dropdown ${
+                  menuClosing
+                    ? "chat-dropdown-closing"
+                    : ""
+                }`}
+                onAnimationEnd={
+                  handleMenuAnimationEnd
+                }
+                style={{
+                  position: "absolute",
+                  top: "calc(100% + 6px)",
+                  right: 0,
+                  zIndex: 1000,
+                  pointerEvents: menuClosing
+                    ? "none"
+                    : "auto",
+                }}
+              >
 
-                <div
-                  className="chat-dropdown-backdrop"
+                {/* ================================================= */}
+                {/* AI ANALYSIS */}
+                {/* ================================================= */}
+
+                <button
+                  className="chat-dropdown-item"
+                  onClick={handleOpenAnalysis}
+                  type="button"
                   style={{
-                    position: "fixed",
-                    inset: 0,
-                    zIndex: 999,
-                    background: "transparent",
-                  }}
-                  onClick={() =>
-                    setMenuOpen(false)
-                  }
-                />
-
-                {/* MENU */}
-
-                <div
-                  className="chat-dropdown"
-                  style={{
-                    position: "absolute",
-                    top: "calc(100% + 6px)",
-                    right: 0,
-                    zIndex: 1000,
-                    pointerEvents: "auto",
+                    position: "relative",
+                    zIndex: 1001,
                   }}
                 >
+                  <img
+                    src="/robotLogo.png"
+                    alt="AI"
+                    className="ai-analysis-dropdown-icon"
+                  />
 
-                  {/* ================================================= */}
-                  {/* AI ANALYSIS */}
-                  {/* ================================================= */}
+                  <span>
+                    Open AI Analysis
+                  </span>
+                </button>
 
+                {/* ================================================= */}
+                {/* IMPORTANT CONTACT */}
+                {/* ALWAYS VISIBLE FOR 1-TO-1 */}
+                {/* ================================================= */}
+
+                {isOneToOne && (
+                  <button
+                    type="button"
+                    className="chat-dropdown-item"
+                    onClick={handleImportantClick}
+                    style={{
+                      position: "relative",
+                      zIndex: 1001,
+                      cursor: "pointer",
+                    }}
+                  >
+                    <span
+                      style={{
+                        width: "22px",
+                        display: "inline-flex",
+                        justifyContent: "center",
+                        alignItems: "center",
+                        fontSize: "16px",
+                      }}
+                    >
+                      📌
+                    </span>
+
+                    <span>
+                      {importantStatus
+                        ? "Remove from important contacts"
+                        : "Add to important contacts"}
+                    </span>
+                  </button>
+                )}
+
+                {/* ================================================= */}
+                {/* GROUP INFO */}
+                {/* ================================================= */}
+
+                {isGroup && (
                   <button
                     className="chat-dropdown-item"
-                    onClick={handleOpenAnalysis}
+                    onClick={handleOpenInfo}
                     type="button"
                     style={{
                       position: "relative",
                       zIndex: 1001,
                     }}
                   >
-                    <img
-                      src="/robotLogo.png"
-                      alt="AI"
-                      className="ai-analysis-dropdown-icon"
+                    <span>👥</span>
+
+                    <span>
+                      View group info
+                    </span>
+                  </button>
+                )}
+
+                {/* ================================================= */}
+                {/* MUTE */}
+                {/* ================================================= */}
+
+                <button
+                  onClick={handleMuteClick}
+                  className="chat-dropdown-item"
+                  type="button"
+                  style={{
+                    position: "relative",
+                    zIndex: 1001,
+                  }}
+                >
+                  <span
+                    style={{
+                      width: "22px",
+                      height: "22px",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      position: "relative",
+                    }}
+                  >
+                    <span
+                      style={{
+                        width: "17px",
+                        height: "17px",
+                        border:
+                          "1.5px solid currentColor",
+                        borderRadius: "50%",
+                        display: "block",
+                        opacity: 0.8,
+                      }}
                     />
+                  </span>
 
-                    <span>
-                      Open AI Analysis
-                    </span>
-                  </button>
+                  <span>
+                    {(isGroup
+                      ? isGroupMuted
+                      : isMuted)
+                      ? isGroup
+                        ? "Unmute notifications"
+                        : "Unmute conversation"
+                      : isGroup
+                        ? "Mute notifications"
+                        : "Mute conversation"}
+                  </span>
+                </button>
 
-                  {/* ================================================= */}
-                  {/* IMPORTANT CONTACT */}
-                  {/* ALWAYS VISIBLE FOR 1-TO-1 */}
-                  {/* ================================================= */}
-
-                  {isOneToOne && (
-                    <button
-                      type="button"
-                      className="chat-dropdown-item"
-                      onClick={handleImportantClick}
-                      style={{
-                        position: "relative",
-                        zIndex: 1001,
-                        cursor: "pointer",
-                      }}
-                    >
-                      <span
-                        style={{
-                          width: "22px",
-                          display: "inline-flex",
-                          justifyContent: "center",
-                          alignItems: "center",
-                          fontSize: "16px",
-                        }}
-                      >
-                        📌
-                      </span>
-
-                      <span>
-                        {importantStatus
-                          ? "Remove from important contacts"
-                          : "Add to important contacts"}
-                      </span>
-                    </button>
-                  )}
-
-                  {/* ================================================= */}
-                  {/* GROUP INFO */}
-                  {/* ================================================= */}
-
-                  {isGroup && (
-                    <button
-                      className="chat-dropdown-item"
-                      onClick={handleOpenInfo}
-                      type="button"
-                      style={{
-                        position: "relative",
-                        zIndex: 1001,
-                      }}
-                    >
-                      <span>👥</span>
-
-                      <span>
-                        View group info
-                      </span>
-                    </button>
-                  )}
-
-                  {/* ================================================= */}
-                  {/* MUTE */}
-                  {/* ================================================= */}
-
-                  <button
-                    onClick={handleMuteClick}
-                    className="chat-dropdown-item"
-                    type="button"
-                    style={{
-                      position: "relative",
-                      zIndex: 1001,
-                    }}
-                  >
-                    <span>
-                      {(isGroup
-                        ? isGroupMuted
-                        : isMuted)
-                        ? "🔔"
-                        : "🔕"}
-                    </span>
-
-                    <span>
-                      {(isGroup
-                        ? isGroupMuted
-                        : isMuted)
-                        ? isGroup
-                          ? "Unmute notifications"
-                          : "Unmute conversation"
-                        : isGroup
-                          ? "Mute notifications"
-                          : "Mute conversation"}
-                    </span>
-                  </button>
-
-                </div>
-              </>
+              </div>
             )}
-
           </div>
         </div>
       </div>
@@ -785,7 +857,6 @@ export default function ChatHeader({
           </div>
         </div>
       )}
-
     </>
   );
 }

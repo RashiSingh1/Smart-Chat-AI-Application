@@ -128,6 +128,7 @@ export default function ChatArea({
         isOnline: false,
         isGroup: true,
         members: groupMembers || [],
+        created_by: group?.created_by,
       }
     : contact;
 
@@ -682,38 +683,51 @@ export default function ChatArea({
       {/* HEADER */}
       {/* ================================================= */}
 
+      {/*
+        FIX: ChatHeader expects FOUR separate mute-related
+        props — isMuted / onToggleMute for 1-to-1, and
+        isGroupMuted / onToggleGroupMute for groups. It
+        decides internally (via chatType/contact.isGroup/group)
+        which pair to actually use.
+
+        Previously this component collapsed all four into just
+        isMuted/onToggleMute using a ternary, so ChatHeader's
+        group branch (isGroup === true) always read
+        onToggleGroupMute as undefined and silently did nothing
+        on click — both in the dropdown "Mute notifications"
+        item and in the Group Info modal's "Mute" button.
+
+        Also passing chatType and group explicitly now, since
+        ChatHeader's own isGroup detection can use them directly
+        instead of relying only on headerContact.isGroup.
+      */}
+
       <ChatHeader
-  contact={headerContact}
-  onBack={onBack}
+        contact={headerContact}
+        group={group}
+        chatType={chatType}
+        onBack={onBack}
 
-  isMuted={
-    isGroupChat
-      ? isGroupMuted
-      : isMuted
-  }
+        isMuted={isMuted}
+        onToggleMute={onToggleMute}
 
-  onToggleMute={
-    isGroupChat
-      ? onToggleGroupMute
-      : onToggleMute
-  }
+        isGroupMuted={isGroupMuted}
+        onToggleGroupMute={onToggleGroupMute}
 
-  onOpenAnalysis={
-    onOpenAIAnalysis
-  }
+        onOpenAnalysis={onOpenAIAnalysis}
 
-  isImportant={
-    isGroupChat
-      ? false
-      : isImportant
-  }
+        isImportant={
+          isGroupChat
+            ? false
+            : isImportant
+        }
 
-  onToggleImportant={
-    isGroupChat
-      ? undefined
-      : onToggleImportant
-  }
-/>
+        onToggleImportant={
+          isGroupChat
+            ? undefined
+            : onToggleImportant
+        }
+      />
 
       {/* ================================================= */}
       {/* MESSAGE LIST */}
