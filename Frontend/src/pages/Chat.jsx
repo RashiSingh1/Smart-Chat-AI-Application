@@ -324,16 +324,6 @@ export default function Chat() {
   ] = useState(false);
 
   // =====================================================
-  // MUTED ID SETS (for Sidebar highlighting)
-  // =====================================================
-
-  const [mutedUserIds, setMutedUserIds] =
-    useState(new Set());
-
-  const [mutedGroupIds, setMutedGroupIds] =
-    useState(new Set());
-
-  // =====================================================
   // REFS
   // =====================================================
 
@@ -623,59 +613,38 @@ export default function Chat() {
   // AI USER NOTIFICATION
   // =====================================================
 
-  function showAINotification(
-    message,
-    contact
-  ) {
-    if (!isMountedRef.current) {
-      return;
-    }
+  function showAINotification(message, contact) {
+  setShowAIRobot(true);
 
-    if (notificationTimerRef.current) {
-      clearTimeout(
-        notificationTimerRef.current
-      );
+  setTimeout(() => {
+    setShowAIRobot(false);
 
-      notificationTimerRef.current = null;
-    }
+    setAiMessageNotification({
+      senderName:
+        contact?.username ||
+        contact?.name ||
+        "Someone",
 
-    setShowAIRobot(true);
+      text:
+        message.text ??
+        message.message ??
+        message.content ??
+        "Important message",
 
-    notificationTimerRef.current =
-      setTimeout(() => {
-        if (!isMountedRef.current) {
-          return;
-        }
+      contactId: contact?.id ?? null,
+    });
 
-        setShowAIRobot(false);
+    // Popup ko thoda zyada time visible rakho
+    setTimeout(() => {
+      setAiMessageNotification(null);
 
-        setAiMessageNotification({
-          senderName:
-            contact?.username ||
-            contact?.name ||
-            "Someone",
+      if (contact) {
+        handleSelectContact(contact);
+      }
+    }, 4000);
 
-          text:
-            message.text ??
-            message.message ??
-            message.content ??
-            "Important message",
-        });
-
-        notificationTimerRef.current =
-          setTimeout(() => {
-            if (!isMountedRef.current) {
-              return;
-            }
-
-            setAiMessageNotification(null);
-
-            if (contact) {
-              handleSelectContact(contact);
-            }
-          }, 1500);
-      }, 2000);
-  }
+  }, 2000);
+}
 
   // =====================================================
   // AI GROUP NOTIFICATION
@@ -1182,23 +1151,10 @@ export default function Chat() {
           `/mute/${userId}`
         );
 
-      const muted =
-        res.data?.is_muted === true;
-
-      setIsMuted(muted);
-
-      setMutedUserIds((prev) => {
-        const next = new Set(prev);
-        const numericId = Number(userId);
-
-        if (muted) {
-          next.add(numericId);
-        } else {
-          next.delete(numericId);
-        }
-
-        return next;
-      });
+      setIsMuted(
+        res.data?.is_muted ===
+          true
+      );
     } catch (error) {
       setIsMuted(false);
     }
@@ -1217,23 +1173,10 @@ export default function Chat() {
           `/mute/group/${groupId}`
         );
 
-      const muted =
-        res.data?.is_muted === true;
-
-      setIsGroupMuted(muted);
-
-      setMutedGroupIds((prev) => {
-        const next = new Set(prev);
-        const numericId = Number(groupId);
-
-        if (muted) {
-          next.add(numericId);
-        } else {
-          next.delete(numericId);
-        }
-
-        return next;
-      });
+      setIsGroupMuted(
+        res.data?.is_muted ===
+          true
+      );
     } catch (error) {
       setIsGroupMuted(false);
     }
@@ -1248,34 +1191,24 @@ export default function Chat() {
       return;
     }
 
-    const groupId =
-      Number(selectedGroup.id);
-
     try {
+      const groupId =
+        Number(
+          selectedGroup.id
+        );
+
       if (isGroupMuted) {
         await API.delete(
           `/mute/group/${groupId}`
         );
 
         setIsGroupMuted(false);
-
-        setMutedGroupIds((prev) => {
-          const next = new Set(prev);
-          next.delete(groupId);
-          return next;
-        });
       } else {
         await API.put(
           `/mute/group/${groupId}`
         );
 
         setIsGroupMuted(true);
-
-        setMutedGroupIds((prev) => {
-          const next = new Set(prev);
-          next.add(groupId);
-          return next;
-        });
       }
     } catch (error) {
       alert(
@@ -1291,40 +1224,35 @@ export default function Chat() {
   // =====================================================
 
   async function toggleMute() {
-    if (!selectedUser?.id) {
+    if (!selectedUser) {
       return;
     }
 
-    const userId = Number(selectedUser.id);
-
     try {
+      const userId =
+        Number(
+          selectedUser.id
+        );
+
       if (isMuted) {
         await API.delete(
           `/mute/${userId}`
         );
 
         setIsMuted(false);
-
-        setMutedUserIds((prev) => {
-          const next = new Set(prev);
-          next.delete(userId);
-          return next;
-        });
       } else {
         await API.put(
           `/mute/${userId}`
         );
 
         setIsMuted(true);
-
-        setMutedUserIds((prev) => {
-          const next = new Set(prev);
-          next.add(userId);
-          return next;
-        });
       }
     } catch (error) {
-      console.log("Failed to toggle mute:", error);
+      alert(
+        error.response?.data
+          ?.detail ||
+          "Unable to update mute status"
+      );
     }
   }
 
@@ -1992,6 +1920,96 @@ export default function Chat() {
         }
 
         // =================================================
+        // AI / MEDIA MESSAGE UPDATE
+        // =================================================
+        // Media messages are delivered immediately with no AI category.
+        // When background AI finishes, the backend sends this small event
+        // so both sender and receiver can update the existing message.
+        if (message.type === "message_update") {
+          const updatedCategory =
+            message.ai_category ??
+            message.aiCategory ??
+            message.category ??
+            null;
+
+          setMessages((prev) =>
+            prev.map((item) =>
+              Number(item.id) === Number(message.id)
+                ? {
+                    ...item,
+                    aiCategory: updatedCategory,
+                    ai_category: updatedCategory,
+                    aiReason:
+                      message.ai_reason ??
+                      message.aiReason ??
+                      message.reason ??
+                      "",
+                    ai_reason:
+                      message.ai_reason ??
+                      message.aiReason ??
+                      message.reason ??
+                      "",
+                    aiConfidence:
+                      message.ai_confidence ??
+                      message.aiConfidence ??
+                      message.confidence ??
+                      null,
+                    ai_confidence:
+                      message.ai_confidence ??
+                      message.aiConfidence ??
+                      message.confidence ??
+                      null,
+                  }
+                : item
+            )
+          );
+
+          const senderId = Number(message.sender_id);
+          const receiverId = Number(message.receiver_id);
+          const contactId =
+            senderId === currentUserId
+              ? receiverId
+              : senderId;
+
+          if (contactId) {
+            setUsers((prev) => {
+              const updated = prev.map((user) =>
+                Number(user.id) === contactId
+                  ? {
+                      ...user,
+                      aiCategory: updatedCategory,
+                    }
+                  : user
+              );
+
+              return [...updated].sort(
+                (a, b) =>
+                  (b.lastMessageTimestamp || 0) -
+                  (a.lastMessageTimestamp || 0)
+              );
+            });
+          }
+
+          // A media message can become urgent after AI finishes.
+          // Reuse the existing notification logic for the final category.
+          if (updatedCategory === "notify" && senderId !== currentUserId) {
+            const contact = usersRef.current.find(
+              (user) => Number(user.id) === senderId
+            );
+
+            handleIncomingNotification(
+              {
+                ...message,
+                ai_category: updatedCategory,
+              },
+              contact
+            );
+          }
+
+          return;
+        }
+
+        // =================================================
         // GROUP MESSAGE
         // =================================================
 
@@ -2360,850 +2378,853 @@ export default function Chat() {
   // SEND MESSAGE
   // =====================================================
 
-  async function sendMessage(text) {
-    if (!selectedUser || !text.trim()) {
-      return;
-    }
+async function sendMessage(text) {
+  if (!selectedUser || !text.trim()) {
+    return;
+  }
 
-    const trimmedText = text.trim();
+  const trimmedText = text.trim();
 
-    const now = new Date();
-    const temporaryId = `temp-${Date.now()}-${Math.random()
-      .toString(36)
-      .slice(2)}`;
+  const now = new Date();
+  const temporaryId = `temp-${Date.now()}-${Math.random()
+    .toString(36)
+    .slice(2)}`;
 
-    // =====================================================
-    // OPTIMISTIC MESSAGE
-    // SHOW IMMEDIATELY
-    // =====================================================
+  // =====================================================
+  // OPTIMISTIC MESSAGE
+  // SHOW IMMEDIATELY
+  // =====================================================
 
-    const optimisticMessage = {
-      id: temporaryId,
+  const optimisticMessage = {
+    id: temporaryId,
 
-      sender_id: currentUserId,
+    sender_id: currentUserId,
 
-      receiver_id: Number(selectedUser.id),
+    receiver_id: Number(selectedUser.id),
 
-      text: trimmedText,
+    text: trimmedText,
 
-      media_type: null,
+    media_type: null,
 
-      media_url: null,
+    media_url: null,
 
-      time: now.toLocaleTimeString([], {
+    time: now.toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+    }),
+
+    created_at: now.toISOString(),
+
+    isSent: true,
+
+    aiCategory: null,
+
+    aiReason: "",
+
+    aiConfidence: null,
+
+    // temporary flag
+    isOptimistic: true,
+  };
+
+  // =====================================================
+  // SHOW MESSAGE IMMEDIATELY
+  // =====================================================
+
+  setMessages((prev) => [
+    ...prev,
+    optimisticMessage,
+  ]);
+
+  // =====================================================
+  // UPDATE SIDEBAR IMMEDIATELY
+  // =====================================================
+
+  updateContactPreview(
+    selectedUser.id,
+    [optimisticMessage]
+  );
+
+  // =====================================================
+  // SEND TO BACKEND IN BACKGROUND
+  // =====================================================
+
+  try {
+    invalidateCache(
+      `/messages/${selectedUser.id}`
+    );
+
+    const response = await API.post(
+      "/messages",
+      {
+        receiver_id: selectedUser.id,
+        text: trimmedText,
+      }
+    );
+
+    const serverMessage = {
+      ...optimisticMessage,
+
+      id:
+        response.data?.id ??
+        optimisticMessage.id,
+
+      sender_id:
+        response.data?.sender_id ??
+        currentUserId,
+
+      receiver_id:
+        response.data?.receiver_id ??
+        selectedUser.id,
+
+      text:
+        response.data?.text ??
+        trimmedText,
+
+      created_at:
+        response.data?.created_at ??
+        optimisticMessage.created_at,
+
+      time: new Date(
+        response.data?.created_at ??
+          optimisticMessage.created_at
+      ).toLocaleTimeString([], {
         hour: "2-digit",
         minute: "2-digit",
       }),
 
-      created_at: now.toISOString(),
+      aiCategory:
+        response.data?.ai_category ??
+        null,
 
-      isSent: true,
+      aiReason:
+        response.data?.ai_reason ??
+        "",
 
-      aiCategory: null,
+      aiConfidence:
+        response.data?.ai_confidence ??
+        null,
 
-      aiReason: "",
-
-      aiConfidence: null,
-
-      // temporary flag
-      isOptimistic: true,
+      isOptimistic: false,
     };
 
-    // =====================================================
-    // SHOW MESSAGE IMMEDIATELY
-    // =====================================================
+    // ===================================================
+    // REGISTER REAL SERVER MESSAGE
+    // BEFORE WEBSOCKET ECHO
+    // ===================================================
 
-    setMessages((prev) => [
-      ...prev,
-      optimisticMessage,
-    ]);
+    markMessageAsProcessed(
+      serverMessage
+    );
 
-    // =====================================================
-    // UPDATE SIDEBAR IMMEDIATELY
-    // =====================================================
+    // ===================================================
+    // REPLACE TEMP MESSAGE WITH SERVER MESSAGE
+    // ===================================================
+
+    setMessages((prev) =>
+      prev.map((message) =>
+        message.id === temporaryId
+          ? serverMessage
+          : message
+      )
+    );
 
     updateContactPreview(
       selectedUser.id,
-      [optimisticMessage]
+      [serverMessage]
+    );
+  } catch (error) {
+    console.log(
+      "Send message error:",
+      error
     );
 
-    // =====================================================
-    // SEND TO BACKEND IN BACKGROUND
-    // =====================================================
+    // ===================================================
+    // OPTIONAL:
+    // MARK MESSAGE AS FAILED
+    // ===================================================
 
-    try {
-      invalidateCache(
-        `/messages/${selectedUser.id}`
+    setMessages((prev) =>
+      prev.map((message) =>
+        message.id === temporaryId
+          ? {
+              ...message,
+              sendFailed: true,
+            }
+          : message
+      )
+    );
+  }
+}
+
+  // =====================================================
+  // SEND IMAGE
+  // =====================================================
+
+  // =====================================================
+// SEND IMAGE MESSAGE — OPTIMISTIC / INSTANT UI
+// =====================================================
+
+async function sendImageMessage({
+  media_type,
+  media_url,
+  text = "",
+}) {
+  if (
+    !selectedUser ||
+    !media_type ||
+    !media_url
+  ) {
+    return;
+  }
+
+  const receiverId =
+    Number(selectedUser.id);
+
+  const now = new Date();
+
+  const temporaryId =
+    `temp-image-${Date.now()}-${Math.random()
+      .toString(36)
+      .slice(2)}`;
+
+  // =====================================================
+  // CREATE OPTIMISTIC IMAGE MESSAGE
+  // =====================================================
+
+  const optimisticMessage = {
+    id: temporaryId,
+
+    sender_id: currentUserId,
+
+    receiver_id: receiverId,
+
+    text: text?.trim() || "",
+
+    media_type,
+
+    media_url,
+
+    time: now.toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+    }),
+
+    created_at: now.toISOString(),
+
+    isSent: true,
+
+    aiCategory: null,
+
+    aiReason: "",
+
+    aiConfidence: null,
+
+    isOptimistic: true,
+
+    sendFailed: false,
+  };
+
+  // =====================================================
+  // SHOW IMAGE IMMEDIATELY
+  // =====================================================
+
+  setMessages((prev) => [
+    ...prev,
+    optimisticMessage,
+  ]);
+
+  // =====================================================
+  // SIDEBAR IMMEDIATELY
+  // =====================================================
+
+  updateContactPreview(
+    receiverId,
+    [optimisticMessage]
+  );
+
+  // =====================================================
+  // SEND TO BACKEND
+  // =====================================================
+
+  try {
+    invalidateCache(
+      `/messages/${receiverId}`
+    );
+
+    const formData =
+      new FormData();
+
+    formData.append(
+      "receiver_id",
+      String(receiverId)
+    );
+
+    formData.append(
+      "media_type",
+      media_type
+    );
+
+    formData.append(
+      "media_url",
+      media_url
+    );
+
+    formData.append(
+      "text",
+      text?.trim() || ""
+    );
+
+    const response =
+      await API.post(
+        "/messages/image",
+        formData
       );
 
-      const response = await API.post(
-        "/messages",
+    const createdAt =
+      response.data?.created_at ||
+      optimisticMessage.created_at;
+
+    // ===================================================
+    // REAL SERVER MESSAGE
+    // ===================================================
+
+    const serverMessage = {
+      ...optimisticMessage,
+
+      id:
+        response.data?.id ??
+        temporaryId,
+
+      sender_id:
+        response.data?.sender_id ??
+        currentUserId,
+
+      receiver_id:
+        response.data?.receiver_id ??
+        receiverId,
+
+      text:
+        response.data?.text ??
+        text?.trim() ??
+        "",
+
+      media_type:
+        response.data?.media_type ??
+        media_type,
+
+      media_url:
+        response.data?.media_url ??
+        media_url,
+
+      created_at:
+        createdAt,
+
+      time: new Date(
+        createdAt
+      ).toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+      }),
+
+      aiCategory:
+        response.data?.ai_category ??
+        response.data?.aiCategory ??
+        null,
+
+      aiReason:
+        response.data?.ai_reason ??
+        response.data?.aiReason ??
+        "",
+
+      aiConfidence:
+        Number(
+          response.data?.ai_confidence ??
+          response.data?.aiConfidence ??
+          0
+        ),
+
+      isOptimistic: false,
+
+      sendFailed: false,
+    };
+
+    // ===================================================
+    // REGISTER SERVER MESSAGE
+    // ===================================================
+
+    markMessageAsProcessed(
+      serverMessage
+    );
+
+    // ===================================================
+    // REPLACE TEMP IMAGE
+    // ===================================================
+
+    setMessages((prev) =>
+      prev.map((message) =>
+        message.id === temporaryId
+          ? serverMessage
+          : message
+      )
+    );
+
+    updateContactPreview(
+      receiverId,
+      [serverMessage]
+    );
+  } catch (error) {
+    console.log(
+      "Send image message error:",
+      error
+    );
+
+    setMessages((prev) =>
+      prev.map((message) =>
+        message.id === temporaryId
+          ? {
+              ...message,
+              isOptimistic: false,
+              sendFailed: true,
+            }
+          : message
+      )
+    );
+  }
+}
+
+ // =====================================================
+// SEND VOICE MESSAGE — OPTIMISTIC / INSTANT UI
+// =====================================================
+
+async function sendVoiceMessage({
+  media_type,
+  media_url,
+}) {
+  if (
+    !selectedUser ||
+    !media_type ||
+    !media_url
+  ) {
+    return;
+  }
+
+  const receiverId =
+    Number(selectedUser.id);
+
+  const now = new Date();
+
+  const temporaryId =
+    `temp-voice-${Date.now()}-${Math.random()
+      .toString(36)
+      .slice(2)}`;
+
+  // =====================================================
+  // CREATE OPTIMISTIC VOICE MESSAGE
+  // =====================================================
+
+  const optimisticMessage = {
+    id: temporaryId,
+
+    sender_id: currentUserId,
+
+    receiver_id: receiverId,
+
+    text: "",
+
+    media_type,
+
+    media_url,
+
+    time: now.toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+    }),
+
+    created_at: now.toISOString(),
+
+    isSent: true,
+
+    aiCategory: "muted",
+
+    aiReason: "Voice message",
+
+    aiConfidence: 100,
+
+    isOptimistic: true,
+
+    sendFailed: false,
+  };
+
+  // =====================================================
+  // SHOW VOICE MESSAGE IMMEDIATELY
+  // =====================================================
+
+  setMessages((prev) => [
+    ...prev,
+    optimisticMessage,
+  ]);
+
+  // =====================================================
+  // SIDEBAR IMMEDIATELY
+  // =====================================================
+
+  updateContactPreview(
+    receiverId,
+    [optimisticMessage]
+  );
+
+  // =====================================================
+  // BACKEND REQUEST
+  // =====================================================
+
+  try {
+    invalidateCache(
+      `/messages/${receiverId}`
+    );
+
+    const formData =
+      new FormData();
+
+    formData.append(
+      "receiver_id",
+      String(receiverId)
+    );
+
+    formData.append(
+      "media_type",
+      media_type
+    );
+
+    formData.append(
+      "media_url",
+      media_url
+    );
+
+    const response =
+      await API.post(
+        "/messages/audio",
+        formData
+      );
+
+    const createdAt =
+      response.data?.created_at ||
+      optimisticMessage.created_at;
+
+    // ===================================================
+    // REAL SERVER MESSAGE
+    // ===================================================
+
+    const serverMessage = {
+      ...optimisticMessage,
+
+      id:
+        response.data?.id ??
+        temporaryId,
+
+      sender_id:
+        response.data?.sender_id ??
+        currentUserId,
+
+      receiver_id:
+        response.data?.receiver_id ??
+        receiverId,
+
+      text: "",
+
+      media_type:
+        response.data?.media_type ??
+        media_type,
+
+      media_url:
+        response.data?.media_url ??
+        media_url,
+
+      created_at:
+        createdAt,
+
+      time: new Date(
+        createdAt
+      ).toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+      }),
+
+      aiCategory:
+        response.data?.ai_category ??
+        response.data?.aiCategory ??
+        "muted",
+
+      aiReason:
+        response.data?.ai_reason ??
+        response.data?.aiReason ??
+        "Voice message",
+
+      aiConfidence:
+        response.data?.ai_confidence ??
+        response.data?.aiConfidence ??
+        100,
+
+      isOptimistic: false,
+
+      sendFailed: false,
+    };
+
+    // ===================================================
+    // REGISTER REAL MESSAGE
+    // ===================================================
+
+    markMessageAsProcessed(
+      serverMessage
+    );
+
+    // ===================================================
+    // REPLACE TEMP VOICE MESSAGE
+    // ===================================================
+
+    setMessages((prev) =>
+      prev.map((message) =>
+        message.id === temporaryId
+          ? serverMessage
+          : message
+      )
+    );
+
+    updateContactPreview(
+      receiverId,
+      [serverMessage]
+    );
+  } catch (error) {
+    console.log(
+      "Send voice message error:",
+      error
+    );
+
+    setMessages((prev) =>
+      prev.map((message) =>
+        message.id === temporaryId
+          ? {
+              ...message,
+              isOptimistic: false,
+              sendFailed: true,
+            }
+          : message
+      )
+    );
+  }
+}
+  // =====================================================
+// SEND GROUP MESSAGE — OPTIMISTIC / INSTANT UI
+// =====================================================
+
+async function sendGroupMessage(text) {
+  if (
+    !selectedGroup ||
+    !text.trim()
+  ) {
+    return;
+  }
+
+  const trimmedText =
+    text.trim();
+
+  const groupId =
+    Number(selectedGroup.id);
+
+  const now = new Date();
+
+  const temporaryId =
+    `temp-group-${Date.now()}-${Math.random()
+      .toString(36)
+      .slice(2)}`;
+
+  // =====================================================
+  // CREATE OPTIMISTIC GROUP MESSAGE
+  // =====================================================
+
+  const optimisticMessage = {
+    id: temporaryId,
+
+    sender_id: currentUserId,
+
+    receiver_id: null,
+
+    group_id: groupId,
+
+    sender_username: "You",
+
+    text: trimmedText,
+
+    media_type: null,
+
+    media_url: null,
+
+    time: now.toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+    }),
+
+    created_at:
+      now.toISOString(),
+
+    isSent: true,
+
+    aiCategory: null,
+
+    aiReason: "",
+
+    aiConfidence: null,
+
+    isOptimistic: true,
+
+    sendFailed: false,
+  };
+
+  // =====================================================
+  // SHOW GROUP MESSAGE IMMEDIATELY
+  // =====================================================
+
+  setMessages((prev) => [
+    ...prev,
+    optimisticMessage,
+  ]);
+
+  // =====================================================
+  // UPDATE GROUP SIDEBAR IMMEDIATELY
+  // =====================================================
+
+  updateGroupPreview(
+    groupId,
+    optimisticMessage
+  );
+
+  // =====================================================
+  // BACKEND REQUEST
+  // =====================================================
+
+  try {
+    invalidateCache(
+      `/groups/${groupId}/messages`
+    );
+
+    const response =
+      await API.post(
+        `/groups/${groupId}/messages`,
         {
-          receiver_id: selectedUser.id,
           text: trimmedText,
         }
       );
 
-      const serverMessage = {
-        ...optimisticMessage,
-
-        id:
-          response.data?.id ??
-          optimisticMessage.id,
-
-        sender_id:
-          response.data?.sender_id ??
-          currentUserId,
-
-        receiver_id:
-          response.data?.receiver_id ??
-          selectedUser.id,
-
-        text:
-          response.data?.text ??
-          trimmedText,
-
-        created_at:
-          response.data?.created_at ??
-          optimisticMessage.created_at,
-
-        time: new Date(
-          response.data?.created_at ??
-            optimisticMessage.created_at
-        ).toLocaleTimeString([], {
-          hour: "2-digit",
-          minute: "2-digit",
-        }),
-
-        aiCategory:
-          response.data?.ai_category ??
-          null,
-
-        aiReason:
-          response.data?.ai_reason ??
-          "",
-
-        aiConfidence:
-          response.data?.ai_confidence ??
-          null,
-
-        isOptimistic: false,
-      };
-
-      // ===================================================
-      // REGISTER REAL SERVER MESSAGE
-      // BEFORE WEBSOCKET ECHO
-      // ===================================================
-
-      markMessageAsProcessed(
-        serverMessage
-      );
-
-      // ===================================================
-      // REPLACE TEMP MESSAGE WITH SERVER MESSAGE
-      // ===================================================
-
-      setMessages((prev) =>
-        prev.map((message) =>
-          message.id === temporaryId
-            ? serverMessage
-            : message
-        )
-      );
-
-      updateContactPreview(
-        selectedUser.id,
-        [serverMessage]
-      );
-    } catch (error) {
-      console.log(
-        "Send message error:",
-        error
-      );
-
-      // ===================================================
-      // OPTIONAL:
-      // MARK MESSAGE AS FAILED
-      // ===================================================
-
-      setMessages((prev) =>
-        prev.map((message) =>
-          message.id === temporaryId
-            ? {
-                ...message,
-                sendFailed: true,
-              }
-            : message
-        )
-      );
-    }
-  }
-
-  // =====================================================
-  // SEND IMAGE MESSAGE — OPTIMISTIC / INSTANT UI
-  // =====================================================
-
-  async function sendImageMessage({
-    media_type,
-    media_url,
-    text = "",
-  }) {
-    if (
-      !selectedUser ||
-      !media_type ||
-      !media_url
-    ) {
-      return;
-    }
-
-    const receiverId =
-      Number(selectedUser.id);
-
-    const now = new Date();
-
-    const temporaryId =
-      `temp-image-${Date.now()}-${Math.random()
-        .toString(36)
-        .slice(2)}`;
-
-    // =====================================================
-    // CREATE OPTIMISTIC IMAGE MESSAGE
-    // =====================================================
-
-    const optimisticMessage = {
-      id: temporaryId,
-
-      sender_id: currentUserId,
-
-      receiver_id: receiverId,
-
-      text: text?.trim() || "",
-
-      media_type,
-
-      media_url,
-
-      time: now.toLocaleTimeString([], {
-        hour: "2-digit",
-        minute: "2-digit",
-      }),
-
-      created_at: now.toISOString(),
-
-      isSent: true,
-
-      aiCategory: null,
-
-      aiReason: "",
-
-      aiConfidence: null,
-
-      isOptimistic: true,
-
-      sendFailed: false,
-    };
-
-    // =====================================================
-    // SHOW IMAGE IMMEDIATELY
-    // =====================================================
-
-    setMessages((prev) => [
-      ...prev,
-      optimisticMessage,
-    ]);
-
-    // =====================================================
-    // SIDEBAR IMMEDIATELY
-    // =====================================================
-
-    updateContactPreview(
-      receiverId,
-      [optimisticMessage]
-    );
-
-    // =====================================================
-    // SEND TO BACKEND
-    // =====================================================
-
-    try {
-      invalidateCache(
-        `/messages/${receiverId}`
-      );
-
-      const formData =
-        new FormData();
-
-      formData.append(
-        "receiver_id",
-        String(receiverId)
-      );
-
-      formData.append(
-        "media_type",
-        media_type
-      );
-
-      formData.append(
-        "media_url",
-        media_url
-      );
-
-      formData.append(
-        "text",
-        text?.trim() || ""
-      );
-
-      const response =
-        await API.post(
-          "/messages/image",
-          formData
-        );
-
-      const createdAt =
-        response.data?.created_at ||
-        optimisticMessage.created_at;
-
-      // ===================================================
-      // REAL SERVER MESSAGE
-      // ===================================================
-
-      const serverMessage = {
-        ...optimisticMessage,
-
-        id:
-          response.data?.id ??
-          temporaryId,
-
-        sender_id:
-          response.data?.sender_id ??
-          currentUserId,
-
-        receiver_id:
-          response.data?.receiver_id ??
-          receiverId,
-
-        text:
-          response.data?.text ??
-          text?.trim() ??
-          "",
-
-        media_type:
-          response.data?.media_type ??
-          media_type,
-
-        media_url:
-          response.data?.media_url ??
-          media_url,
-
-        created_at:
-          createdAt,
-
-        time: new Date(
-          createdAt
-        ).toLocaleTimeString([], {
-          hour: "2-digit",
-          minute: "2-digit",
-        }),
-
-        aiCategory:
-          response.data?.ai_category ??
-          response.data?.aiCategory ??
-          null,
-
-        aiReason:
-          response.data?.ai_reason ??
-          response.data?.aiReason ??
-          "",
-
-        aiConfidence:
-          Number(
-            response.data?.ai_confidence ??
-            response.data?.aiConfidence ??
-            0
-          ),
-
-        isOptimistic: false,
-
-        sendFailed: false,
-      };
-
-      // ===================================================
-      // REGISTER SERVER MESSAGE
-      // ===================================================
-
-      markMessageAsProcessed(
-        serverMessage
-      );
-
-      // ===================================================
-      // REPLACE TEMP IMAGE
-      // ===================================================
-
-      setMessages((prev) =>
-        prev.map((message) =>
-          message.id === temporaryId
-            ? serverMessage
-            : message
-        )
-      );
-
-      updateContactPreview(
-        receiverId,
-        [serverMessage]
-      );
-    } catch (error) {
-      console.log(
-        "Send image message error:",
-        error
-      );
-
-      setMessages((prev) =>
-        prev.map((message) =>
-          message.id === temporaryId
-            ? {
-                ...message,
-                isOptimistic: false,
-                sendFailed: true,
-              }
-            : message
-        )
-      );
-    }
-  }
-
-  // =====================================================
-  // SEND VOICE MESSAGE — OPTIMISTIC / INSTANT UI
-  // =====================================================
-
-  async function sendVoiceMessage({
-    media_type,
-    media_url,
-  }) {
-    if (
-      !selectedUser ||
-      !media_type ||
-      !media_url
-    ) {
-      return;
-    }
-
-    const receiverId =
-      Number(selectedUser.id);
-
-    const now = new Date();
-
-    const temporaryId =
-      `temp-voice-${Date.now()}-${Math.random()
-        .toString(36)
-        .slice(2)}`;
-
-    // =====================================================
-    // CREATE OPTIMISTIC VOICE MESSAGE
-    // =====================================================
-
-    const optimisticMessage = {
-      id: temporaryId,
-
-      sender_id: currentUserId,
-
-      receiver_id: receiverId,
-
-      text: "",
-
-      media_type,
-
-      media_url,
-
-      time: now.toLocaleTimeString([], {
-        hour: "2-digit",
-        minute: "2-digit",
-      }),
-
-      created_at: now.toISOString(),
-
-      isSent: true,
-
-      aiCategory: "muted",
-
-      aiReason: "Voice message",
-
-      aiConfidence: 100,
-
-      isOptimistic: true,
-
-      sendFailed: false,
-    };
-
-    // =====================================================
-    // SHOW VOICE MESSAGE IMMEDIATELY
-    // =====================================================
-
-    setMessages((prev) => [
-      ...prev,
-      optimisticMessage,
-    ]);
-
-    // =====================================================
-    // SIDEBAR IMMEDIATELY
-    // =====================================================
-
-    updateContactPreview(
-      receiverId,
-      [optimisticMessage]
-    );
-
-    // =====================================================
-    // BACKEND REQUEST
-    // =====================================================
-
-    try {
-      invalidateCache(
-        `/messages/${receiverId}`
-      );
-
-      const formData =
-        new FormData();
-
-      formData.append(
-        "receiver_id",
-        String(receiverId)
-      );
-
-      formData.append(
-        "media_type",
-        media_type
-      );
-
-      formData.append(
-        "media_url",
-        media_url
-      );
-
-      const response =
-        await API.post(
-          "/messages/audio",
-          formData
-        );
-
-      const createdAt =
-        response.data?.created_at ||
-        optimisticMessage.created_at;
-
-      // ===================================================
-      // REAL SERVER MESSAGE
-      // ===================================================
-
-      const serverMessage = {
-        ...optimisticMessage,
-
-        id:
-          response.data?.id ??
-          temporaryId,
-
-        sender_id:
-          response.data?.sender_id ??
-          currentUserId,
-
-        receiver_id:
-          response.data?.receiver_id ??
-          receiverId,
-
-        text: "",
-
-        media_type:
-          response.data?.media_type ??
-          media_type,
-
-        media_url:
-          response.data?.media_url ??
-          media_url,
-
-        created_at:
-          createdAt,
-
-        time: new Date(
-          createdAt
-        ).toLocaleTimeString([], {
-          hour: "2-digit",
-          minute: "2-digit",
-        }),
-
-        aiCategory:
-          response.data?.ai_category ??
-          response.data?.aiCategory ??
-          "muted",
-
-        aiReason:
-          response.data?.ai_reason ??
-          response.data?.aiReason ??
-          "Voice message",
-
-        aiConfidence:
-          response.data?.ai_confidence ??
-          response.data?.aiConfidence ??
-          100,
-
-        isOptimistic: false,
-
-        sendFailed: false,
-      };
-
-      // ===================================================
-      // REGISTER REAL MESSAGE
-      // ===================================================
-
-      markMessageAsProcessed(
-        serverMessage
-      );
-
-      // ===================================================
-      // REPLACE TEMP VOICE MESSAGE
-      // ===================================================
-
-      setMessages((prev) =>
-        prev.map((message) =>
-          message.id === temporaryId
-            ? serverMessage
-            : message
-        )
-      );
-
-      updateContactPreview(
-        receiverId,
-        [serverMessage]
-      );
-    } catch (error) {
-      console.log(
-        "Send voice message error:",
-        error
-      );
-
-      setMessages((prev) =>
-        prev.map((message) =>
-          message.id === temporaryId
-            ? {
-                ...message,
-                isOptimistic: false,
-                sendFailed: true,
-              }
-            : message
-        )
-      );
-    }
-  }
-
-  // =====================================================
-  // SEND GROUP MESSAGE — OPTIMISTIC / INSTANT UI
-  // =====================================================
-
-  async function sendGroupMessage(text) {
-    if (
-      !selectedGroup ||
-      !text.trim()
-    ) {
-      return;
-    }
-
-    const trimmedText =
-      text.trim();
-
-    const groupId =
-      Number(selectedGroup.id);
-
-    const now = new Date();
-
-    const temporaryId =
-      `temp-group-${Date.now()}-${Math.random()
-        .toString(36)
-        .slice(2)}`;
-
-    // =====================================================
-    // CREATE OPTIMISTIC GROUP MESSAGE
-    // =====================================================
-
-    const optimisticMessage = {
-      id: temporaryId,
-
-      sender_id: currentUserId,
+    const createdAt =
+      response.data?.created_at ||
+      optimisticMessage.created_at;
+
+    // ===================================================
+    // REAL SERVER GROUP MESSAGE
+    // ===================================================
+
+    const serverMessage = {
+      ...optimisticMessage,
+
+      id:
+        response.data?.id ??
+        temporaryId,
+
+      sender_id:
+        response.data?.sender_id ??
+        currentUserId,
 
       receiver_id: null,
 
-      group_id: groupId,
+      group_id:
+        response.data?.group_id ??
+        groupId,
 
-      sender_username: "You",
+      sender_username:
+        response.data?.sender_username ||
+        response.data?.sender_name ||
+        "You",
 
-      text: trimmedText,
+      text:
+        response.data?.text ??
+        trimmedText,
 
-      media_type: null,
+      created_at:
+        createdAt,
 
-      media_url: null,
-
-      time: now.toLocaleTimeString([], {
+      time: new Date(
+        createdAt
+      ).toLocaleTimeString([], {
         hour: "2-digit",
         minute: "2-digit",
       }),
 
-      created_at:
-        now.toISOString(),
+      aiCategory:
+        response.data?.ai_category ??
+        response.data?.aiCategory ??
+        null,
 
-      isSent: true,
+      aiReason:
+        response.data?.ai_reason ??
+        response.data?.aiReason ??
+        "",
 
-      aiCategory: null,
+      aiConfidence:
+        Number(
+          response.data?.ai_confidence ??
+          response.data?.aiConfidence ??
+          0
+        ),
 
-      aiReason: "",
-
-      aiConfidence: null,
-
-      isOptimistic: true,
+      isOptimistic: false,
 
       sendFailed: false,
     };
 
-    // =====================================================
-    // SHOW GROUP MESSAGE IMMEDIATELY
-    // =====================================================
+    // ===================================================
+    // REGISTER REAL MESSAGE BEFORE WS ECHO
+    // ===================================================
 
-    setMessages((prev) => [
-      ...prev,
-      optimisticMessage,
-    ]);
+    markMessageAsProcessed(
+      serverMessage
+    );
 
-    // =====================================================
-    // UPDATE GROUP SIDEBAR IMMEDIATELY
-    // =====================================================
+    // ===================================================
+    // REPLACE TEMP GROUP MESSAGE
+    // ===================================================
+
+    setMessages((prev) =>
+      prev.map((message) =>
+        message.id === temporaryId
+          ? serverMessage
+          : message
+      )
+    );
 
     updateGroupPreview(
       groupId,
-      optimisticMessage
+      serverMessage
+    );
+  } catch (error) {
+    console.log(
+      "Send group message error:",
+      error
     );
 
-    // =====================================================
-    // BACKEND REQUEST
-    // =====================================================
-
-    try {
-      invalidateCache(
-        `/groups/${groupId}/messages`
-      );
-
-      const response =
-        await API.post(
-          `/groups/${groupId}/messages`,
-          {
-            text: trimmedText,
-          }
-        );
-
-      const createdAt =
-        response.data?.created_at ||
-        optimisticMessage.created_at;
-
-      // ===================================================
-      // REAL SERVER GROUP MESSAGE
-      // ===================================================
-
-      const serverMessage = {
-        ...optimisticMessage,
-
-        id:
-          response.data?.id ??
-          temporaryId,
-
-        sender_id:
-          response.data?.sender_id ??
-          currentUserId,
-
-        receiver_id: null,
-
-        group_id:
-          response.data?.group_id ??
-          groupId,
-
-        sender_username:
-          response.data?.sender_username ||
-          response.data?.sender_name ||
-          "You",
-
-        text:
-          response.data?.text ??
-          trimmedText,
-
-        created_at:
-          createdAt,
-
-        time: new Date(
-          createdAt
-        ).toLocaleTimeString([], {
-          hour: "2-digit",
-          minute: "2-digit",
-        }),
-
-        aiCategory:
-          response.data?.ai_category ??
-          response.data?.aiCategory ??
-          null,
-
-        aiReason:
-          response.data?.ai_reason ??
-          response.data?.aiReason ??
-          "",
-
-        aiConfidence:
-          Number(
-            response.data?.ai_confidence ??
-            response.data?.aiConfidence ??
-            0
-          ),
-
-        isOptimistic: false,
-
-        sendFailed: false,
-      };
-
-      // ===================================================
-      // REGISTER REAL MESSAGE BEFORE WS ECHO
-      // ===================================================
-
-      markMessageAsProcessed(
-        serverMessage
-      );
-
-      // ===================================================
-      // REPLACE TEMP GROUP MESSAGE
-      // ===================================================
-
-      setMessages((prev) =>
-        prev.map((message) =>
-          message.id === temporaryId
-            ? serverMessage
-            : message
-        )
-      );
-
-      updateGroupPreview(
-        groupId,
-        serverMessage
-      );
-    } catch (error) {
-      console.log(
-        "Send group message error:",
-        error
-      );
-
-      setMessages((prev) =>
-        prev.map((message) =>
-          message.id === temporaryId
-            ? {
-                ...message,
-                isOptimistic: false,
-                sendFailed: true,
-              }
-            : message
-        )
-      );
-    }
+    setMessages((prev) =>
+      prev.map((message) =>
+        message.id === temporaryId
+          ? {
+              ...message,
+              isOptimistic: false,
+              sendFailed: true,
+            }
+          : message
+      )
+    );
   }
-
+}
+ 
   // =====================================================
   // MEDIA SEND ROUTERS
   // =====================================================
@@ -3241,84 +3262,16 @@ export default function Chat() {
   }
 
   // =====================================================
-  // CREATE GROUP
-  //
-  // NOTE: This is the handler passed to <Sidebar onCreateGroup={...} />.
-  // Previously this prop was an empty no-op function
-  // (onCreateGroup={() => {}}), so the modal appeared to "do nothing"
-  // even though Sidebar's own click handling was fine — no request
-  // was ever sent to the backend's POST /groups endpoint.
-  //
-  // This version:
-  //  - actually calls POST /groups with the name + member ids
-  //  - refreshes the group list (/group-conversations) so the new
-  //    group appears in the sidebar immediately
-  //  - selects the newly created group and switches the chat view
-  //    to it, so the user lands directly in the new group chat
-  //  - re-throws on failure so Sidebar's try/catch can show the
-  //    error inline in the modal instead of failing silently
+  // TODAY'S ANALYTICS
   // =====================================================
-
-  async function handleCreateGroup(
-    name,
-    memberIds
-  ) {
-    const trimmedName = (name || "").trim();
-
-    if (!trimmedName || !Array.isArray(memberIds) || memberIds.length === 0) {
-      throw new Error("Group name and at least one member are required");
-    }
-
-    const response = await API.post("/groups", {
-      name: trimmedName,
-      member_ids: memberIds.map((id) => Number(id)),
-    });
-
-    // Refresh the sidebar's group list from the backend so the new
-    // group (and its correct id/created_at) shows up right away.
-    await loadGroups();
-
-    const newGroupId = Number(response.data?.group_id);
-
-    if (newGroupId) {
-      const newGroup = {
-        id: newGroupId,
-        name: response.data?.name ?? trimmedName,
-        created_by: response.data?.created_by ?? currentUserId,
-        lastMessage: "",
-        lastMessageTime: "",
-        lastMessageTimestamp: 0,
-      };
-
-      handleSelectGroup(newGroup);
-    }
-
-    return response.data;
-  }
-
-  // =====================================================
-  // TODAY'S ANALYTICS — RECEIVED MESSAGES ONLY
-  // =====================================================
-  // The AI analytics counters must represent messages received
-  // from the other person / group members only. Messages sent
-  // by the current user are excluded from ALL four counters.
 
   const analytics = useMemo(() => {
     const today = new Date();
 
-    const todayReceivedMessages = messages.filter((message) => {
+    const todayMessages = messages.filter((message) => {
       if (!message.created_at) return false;
 
-      // Exclude messages sent by the current user.
-      if (Number(message.sender_id) === Number(currentUserId)) {
-        return false;
-      }
-
       const messageDate = new Date(message.created_at);
-
-      if (Number.isNaN(messageDate.getTime())) {
-        return false;
-      }
 
       return (
         messageDate.getFullYear() === today.getFullYear() &&
@@ -3328,31 +3281,27 @@ export default function Chat() {
     });
 
     return {
-      // Received messages today only
-      total: todayReceivedMessages.length,
+      total: todayMessages.length,
 
-      // Received messages classified as notify
-      notify: todayReceivedMessages.filter(
+      notify: todayMessages.filter(
         (message) =>
           (message.aiCategory || message.ai_category) ===
           "notify"
       ).length,
 
-      // Received messages classified as digest
-      digest: todayReceivedMessages.filter(
+      digest: todayMessages.filter(
         (message) =>
           (message.aiCategory || message.ai_category) ===
           "digest"
       ).length,
 
-      // Received messages classified as muted
-      muted: todayReceivedMessages.filter(
+      muted: todayMessages.filter(
         (message) =>
           (message.aiCategory || message.ai_category) ===
           "muted"
       ).length,
     };
-  }, [messages, currentUserId]);
+  }, [messages]);
 
   // =====================================================
   // AI ANALYTICS CATEGORY CLICK
@@ -3413,325 +3362,324 @@ export default function Chat() {
 
     setMobileChatOpen(true);
   }
+// =====================================================
+// SEND GROUP IMAGE MESSAGE — OPTIMISTIC / INSTANT UI
+// =====================================================
 
-  // =====================================================
-  // SEND GROUP IMAGE MESSAGE — OPTIMISTIC / INSTANT UI
-  // =====================================================
+async function sendGroupImageMessage({
+  media_type,
+  media_url,
+  text = "",
+}) {
+  if (!selectedGroup || !media_type || !media_url) {
+    return;
+  }
 
-  async function sendGroupImageMessage({
+  const groupId = Number(selectedGroup.id);
+  const now = new Date();
+  const temporaryId = `temp-group-image-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+  const optimisticMessage = {
+    id: temporaryId,
+    sender_id: currentUserId,
+    receiver_id: null,
+    group_id: groupId,
+    sender_username: "You",
+    text: text?.trim() || "",
     media_type,
     media_url,
-    text = "",
-  }) {
-    if (!selectedGroup || !media_type || !media_url) {
-      return;
-    }
+    time: now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+    created_at: now.toISOString(),
+    isSent: true,
+    aiCategory: "digest",
+    aiReason: "Image message",
+    aiConfidence: 100,
+    isOptimistic: true,
+    sendFailed: false,
+  };
 
-    const groupId = Number(selectedGroup.id);
-    const now = new Date();
-    const temporaryId = `temp-group-image-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  setMessages((prev) => [...prev, optimisticMessage]);
+  updateGroupPreview(groupId, optimisticMessage);
 
-    const optimisticMessage = {
-      id: temporaryId,
-      sender_id: currentUserId,
+  try {
+    invalidateCache(`/groups/${groupId}/messages`);
+
+    const formData = new FormData();
+    formData.append("media_type", media_type);
+    formData.append("media_url", media_url);
+    formData.append("text", text?.trim() || "");
+
+    const response = await API.post(
+      `/groups/${groupId}/messages/image`,
+      formData
+    );
+
+    const createdAt = response.data?.created_at || optimisticMessage.created_at;
+
+    const serverMessage = {
+      ...optimisticMessage,
+      id: response.data?.id ?? temporaryId,
+      sender_id: response.data?.sender_id ?? currentUserId,
       receiver_id: null,
-      group_id: groupId,
-      sender_username: "You",
-      text: text?.trim() || "",
-      media_type,
-      media_url,
-      time: now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-      created_at: now.toISOString(),
-      isSent: true,
-      aiCategory: "digest",
-      aiReason: "Image message",
-      aiConfidence: 100,
-      isOptimistic: true,
+      group_id: response.data?.group_id ?? groupId,
+      sender_username: response.data?.sender_username || response.data?.sender_name || "You",
+      text: response.data?.text ?? text?.trim() ?? "",
+      media_type: response.data?.media_type ?? media_type,
+      media_url: response.data?.media_url ?? media_url,
+      created_at: createdAt,
+      time: new Date(createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+      aiCategory: response.data?.ai_category ?? response.data?.aiCategory ?? "digest",
+      aiReason: response.data?.ai_reason ?? response.data?.aiReason ?? "Image message",
+      aiConfidence: response.data?.ai_confidence ?? response.data?.aiConfidence ?? 100,
+      isOptimistic: false,
       sendFailed: false,
     };
 
-    setMessages((prev) => [...prev, optimisticMessage]);
-    updateGroupPreview(groupId, optimisticMessage);
+    markMessageAsProcessed(serverMessage);
+    setMessages((prev) => prev.map((message) => message.id === temporaryId ? serverMessage : message));
+    updateGroupPreview(groupId, serverMessage);
+  } catch (error) {
+    console.log("Send group image message error:", error);
+    console.log("Backend response:", error.response?.data);
 
-    try {
-      invalidateCache(`/groups/${groupId}/messages`);
+    setMessages((prev) =>
+      prev.map((message) =>
+        message.id === temporaryId
+          ? { ...message, isOptimistic: false, sendFailed: true }
+          : message
+      )
+    );
+  }
+}
 
-      const formData = new FormData();
-      formData.append("media_type", media_type);
-      formData.append("media_url", media_url);
-      formData.append("text", text?.trim() || "");
+// =====================================================
+// SEND GROUP VOICE MESSAGE — OPTIMISTIC / INSTANT UI
+// =====================================================
 
-      const response = await API.post(
-        `/groups/${groupId}/messages/image`,
-        formData
-      );
-
-      const createdAt = response.data?.created_at || optimisticMessage.created_at;
-
-      const serverMessage = {
-        ...optimisticMessage,
-        id: response.data?.id ?? temporaryId,
-        sender_id: response.data?.sender_id ?? currentUserId,
-        receiver_id: null,
-        group_id: response.data?.group_id ?? groupId,
-        sender_username: response.data?.sender_username || response.data?.sender_name || "You",
-        text: response.data?.text ?? text?.trim() ?? "",
-        media_type: response.data?.media_type ?? media_type,
-        media_url: response.data?.media_url ?? media_url,
-        created_at: createdAt,
-        time: new Date(createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-        aiCategory: response.data?.ai_category ?? response.data?.aiCategory ?? "digest",
-        aiReason: response.data?.ai_reason ?? response.data?.aiReason ?? "Image message",
-        aiConfidence: response.data?.ai_confidence ?? response.data?.aiConfidence ?? 100,
-        isOptimistic: false,
-        sendFailed: false,
-      };
-
-      markMessageAsProcessed(serverMessage);
-      setMessages((prev) => prev.map((message) => message.id === temporaryId ? serverMessage : message));
-      updateGroupPreview(groupId, serverMessage);
-    } catch (error) {
-      console.log("Send group image message error:", error);
-      console.log("Backend response:", error.response?.data);
-
-      setMessages((prev) =>
-        prev.map((message) =>
-          message.id === temporaryId
-            ? { ...message, isOptimistic: false, sendFailed: true }
-            : message
-        )
-      );
-    }
+async function sendGroupVoiceMessage({
+  media_type,
+  media_url,
+}) {
+  if (
+    !selectedGroup ||
+    !media_type ||
+    !media_url
+  ) {
+    return;
   }
 
-  // =====================================================
-  // SEND GROUP VOICE MESSAGE — OPTIMISTIC / INSTANT UI
-  // =====================================================
+  const groupId = Number(selectedGroup.id);
 
-  async function sendGroupVoiceMessage({
+  const now = new Date();
+
+  const temporaryId =
+    `temp-group-voice-${Date.now()}-${Math.random()
+      .toString(36)
+      .slice(2)}`;
+
+  // ===================================================
+  // OPTIMISTIC GROUP VOICE MESSAGE
+  // ===================================================
+
+  const optimisticMessage = {
+    id: temporaryId,
+
+    sender_id: currentUserId,
+
+    receiver_id: null,
+
+    group_id: groupId,
+
+    sender_username: "You",
+
+    text: "",
+
     media_type,
+
     media_url,
-  }) {
-    if (
-      !selectedGroup ||
-      !media_type ||
-      !media_url
-    ) {
-      return;
-    }
 
-    const groupId = Number(selectedGroup.id);
+    time: now.toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+    }),
 
-    const now = new Date();
+    created_at: now.toISOString(),
 
-    const temporaryId =
-      `temp-group-voice-${Date.now()}-${Math.random()
-        .toString(36)
-        .slice(2)}`;
+    isSent: true,
+
+    aiCategory: "muted",
+
+    aiReason: "Voice message",
+
+    aiConfidence: 100,
+
+    isOptimistic: true,
+
+    sendFailed: false,
+  };
+
+  // ===================================================
+  // SHOW IMMEDIATELY
+  // ===================================================
+
+  setMessages((prev) => [
+    ...prev,
+    optimisticMessage,
+  ]);
+
+  // ===================================================
+  // UPDATE GROUP SIDEBAR
+  // ===================================================
+
+  updateGroupPreview(
+    groupId,
+    optimisticMessage
+  );
+
+  // ===================================================
+  // SEND TO BACKEND
+  // ===================================================
+
+  try {
+    invalidateCache(
+      `/groups/${groupId}/messages`
+    );
+
+    const formData = new FormData();
+
+    formData.append(
+      "media_type",
+      media_type
+    );
+
+    formData.append(
+      "media_url",
+      media_url
+    );
+
+    const response = await API.post(
+      `/groups/${groupId}/messages/audio`,
+      formData
+    );
+
+    const createdAt =
+      response.data?.created_at ||
+      optimisticMessage.created_at;
 
     // ===================================================
-    // OPTIMISTIC GROUP VOICE MESSAGE
+    // SERVER MESSAGE
     // ===================================================
 
-    const optimisticMessage = {
-      id: temporaryId,
+    const serverMessage = {
+      ...optimisticMessage,
 
-      sender_id: currentUserId,
+      id:
+        response.data?.id ??
+        temporaryId,
+
+      sender_id:
+        response.data?.sender_id ??
+        currentUserId,
 
       receiver_id: null,
 
-      group_id: groupId,
+      group_id:
+        response.data?.group_id ??
+        groupId,
 
-      sender_username: "You",
+      sender_username:
+        response.data?.sender_username ||
+        response.data?.sender_name ||
+        "You",
 
       text: "",
 
-      media_type,
+      media_type:
+        response.data?.media_type ??
+        media_type,
 
-      media_url,
+      media_url:
+        response.data?.media_url ??
+        media_url,
 
-      time: now.toLocaleTimeString([], {
+      created_at: createdAt,
+
+      time: new Date(
+        createdAt
+      ).toLocaleTimeString([], {
         hour: "2-digit",
         minute: "2-digit",
       }),
 
-      created_at: now.toISOString(),
+      aiCategory:
+        response.data?.ai_category ??
+        response.data?.aiCategory ??
+        "muted",
 
-      isSent: true,
+      aiReason:
+        response.data?.ai_reason ??
+        response.data?.aiReason ??
+        "Voice message",
 
-      aiCategory: "muted",
+      aiConfidence:
+        response.data?.ai_confidence ??
+        response.data?.aiConfidence ??
+        100,
 
-      aiReason: "Voice message",
-
-      aiConfidence: 100,
-
-      isOptimistic: true,
+      isOptimistic: false,
 
       sendFailed: false,
     };
 
     // ===================================================
-    // SHOW IMMEDIATELY
+    // REGISTER SERVER MESSAGE
     // ===================================================
 
-    setMessages((prev) => [
-      ...prev,
-      optimisticMessage,
-    ]);
-
-    // ===================================================
-    // UPDATE GROUP SIDEBAR
-    // ===================================================
-
-    updateGroupPreview(
-      groupId,
-      optimisticMessage
+    markMessageAsProcessed(
+      serverMessage
     );
 
     // ===================================================
-    // SEND TO BACKEND
+    // REPLACE OPTIMISTIC MESSAGE
     // ===================================================
 
-    try {
-      invalidateCache(
-        `/groups/${groupId}/messages`
-      );
+    setMessages((prev) =>
+      prev.map((message) =>
+        message.id === temporaryId
+          ? serverMessage
+          : message
+      )
+    );
 
-      const formData = new FormData();
+    updateGroupPreview(
+      groupId,
+      serverMessage
+    );
 
-      formData.append(
-        "media_type",
-        media_type
-      );
+  } catch (error) {
+    console.log(
+      "Send group voice message error:",
+      error
+    );
 
-      formData.append(
-        "media_url",
-        media_url
-      );
+    console.log(
+      "Backend response:",
+      error.response?.data
+    );
 
-      const response = await API.post(
-        `/groups/${groupId}/messages/audio`,
-        formData
-      );
-
-      const createdAt =
-        response.data?.created_at ||
-        optimisticMessage.created_at;
-
-      // ===================================================
-      // SERVER MESSAGE
-      // ===================================================
-
-      const serverMessage = {
-        ...optimisticMessage,
-
-        id:
-          response.data?.id ??
-          temporaryId,
-
-        sender_id:
-          response.data?.sender_id ??
-          currentUserId,
-
-        receiver_id: null,
-
-        group_id:
-          response.data?.group_id ??
-          groupId,
-
-        sender_username:
-          response.data?.sender_username ||
-          response.data?.sender_name ||
-          "You",
-
-        text: "",
-
-        media_type:
-          response.data?.media_type ??
-          media_type,
-
-        media_url:
-          response.data?.media_url ??
-          media_url,
-
-        created_at: createdAt,
-
-        time: new Date(
-          createdAt
-        ).toLocaleTimeString([], {
-          hour: "2-digit",
-          minute: "2-digit",
-        }),
-
-        aiCategory:
-          response.data?.ai_category ??
-          response.data?.aiCategory ??
-          "muted",
-
-        aiReason:
-          response.data?.ai_reason ??
-          response.data?.aiReason ??
-          "Voice message",
-
-        aiConfidence:
-          response.data?.ai_confidence ??
-          response.data?.aiConfidence ??
-          100,
-
-        isOptimistic: false,
-
-        sendFailed: false,
-      };
-
-      // ===================================================
-      // REGISTER SERVER MESSAGE
-      // ===================================================
-
-      markMessageAsProcessed(
-        serverMessage
-      );
-
-      // ===================================================
-      // REPLACE OPTIMISTIC MESSAGE
-      // ===================================================
-
-      setMessages((prev) =>
-        prev.map((message) =>
-          message.id === temporaryId
-            ? serverMessage
-            : message
-        )
-      );
-
-      updateGroupPreview(
-        groupId,
-        serverMessage
-      );
-
-    } catch (error) {
-      console.log(
-        "Send group voice message error:",
-        error
-      );
-
-      console.log(
-        "Backend response:",
-        error.response?.data
-      );
-
-      setMessages((prev) =>
-        prev.map((message) =>
-          message.id === temporaryId
-            ? {
-                ...message,
-                isOptimistic: false,
-                sendFailed: true,
-              }
-            : message
-        )
-      );
-    }
+    setMessages((prev) =>
+      prev.map((message) =>
+        message.id === temporaryId
+          ? {
+              ...message,
+              isOptimistic: false,
+              sendFailed: true,
+            }
+          : message
+      )
+    );
   }
+}
 
   // =====================================================
   // SELECT GROUP
@@ -3866,38 +3814,71 @@ export default function Chat() {
       {/* ================================================= */}
 
       {aiMessageNotification && (
-        <div className="ai-message-popup">
-          <p className="ai-message-sender">
-            {
-              aiMessageNotification.senderName
-            }
-          </p>
+  <div className="ai-message-popup">
 
-          <p className="ai-message-text">
-            {
-              aiMessageNotification.text
-            }
-          </p>
-        </div>
-      )}
+    {/* Sender */}
+    <p className="ai-message-sender">
+      {aiMessageNotification.senderName}
+    </p>
+
+    {/* Message */}
+    <p className="ai-message-text">
+      {aiMessageNotification.text}
+    </p>
+
+    {/* Important Contact Action */}
+    {aiMessageNotification.contactId && (
+      <button
+        type="button"
+        className="ai-important-contact-btn"
+        onClick={async (e) => {
+          e.stopPropagation();
+
+          await handleToggleImportant(
+            aiMessageNotification.contactId
+          );
+
+          // Keep popup feedback visible
+          setAiMessageNotification((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  importantAdded: true,
+                }
+              : prev
+          );
+        }}
+      >
+        {aiMessageNotification.importantAdded
+          ? "✓ Added to Important Contacts"
+          : "⭐ Add to Important Contacts"}
+      </button>
+    )}
+
+  </div>
+)}
 
       {/* ================================================= */}
       {/* SIDEBAR */}
       {/* ================================================= */}
 
-      <Sidebar 
-        contacts={users} 
-        groups={groups} 
-        selectedId={selectedUser?.id} 
-        selectedGroupId={selectedGroup?.id} 
-        chatType={chatType} 
-
-        mutedUserIds={mutedUserIds}
-        mutedGroupIds={mutedGroupIds}
-
-        onSelectContact={handleSelectContact} 
-        onSelectGroup={handleSelectGroup} 
-        onCreateGroup={handleCreateGroup} 
+      <Sidebar
+        contacts={users}
+        groups={groups}
+        selectedId={
+          selectedUser?.id
+        }
+        selectedGroupId={
+          selectedGroup?.id
+        }
+        chatType={chatType}
+        onSelectContact={
+          handleSelectContact
+        }
+        onSelectGroup={
+          handleSelectGroup
+        }
+        onCreateGroup={() => {}}
       />
 
       {/* ================================================= */}
@@ -3905,55 +3886,64 @@ export default function Chat() {
       {/* ================================================= */}
 
       <div className="main-panel">
-
         <ChatArea
           contact={selectedUser}
           group={selectedGroup}
           chatType={chatType}
-          currentUserId={currentUserId}
-          groupMembers={groupMembers}
-          messages={displayMessages}
-          activeCategory={activeAnalyticsCategory}
-
-          onSend={handleSend}
-          onSendImage={handleSendImage}
-          onSendVoice={handleSendVoice}
-
+          currentUserId={
+            currentUserId
+          }
+          groupMembers={
+            groupMembers
+          }
+          messages={
+            displayMessages
+          }
+          activeCategory={
+            activeAnalyticsCategory
+          }
+          onSend={
+            handleSend
+          }
+          onSendImage={
+            handleSendImage
+          }
+          onSendVoice={
+            handleSendVoice
+          }
           onTyping={() => {
             if (
               chatType === "user" &&
               selectedUser?.id
             ) {
-              sendTyping(selectedUser.id);
-            }
-          }}
-
-          isTyping={isTyping}
-
-          onBack={() =>
-            setMobileChatOpen(false)
-          }
-
-          isMuted={isMuted}
-          onToggleMute={toggleMute}
-
-          isGroupMuted={isGroupMuted}
-          onToggleGroupMute={toggleGroupMute}
-
-          onOpenAIAnalysis={() =>
-            setShowMobileAIPanel(true)
-          }
-
-          onToggleImportant={() => {
-            if (
-              chatType === "user" &&
-              selectedUser?.id
-            ) {
-              handleToggleImportant(
+              sendTyping(
                 selectedUser.id
               );
             }
           }}
+          isTyping={
+            isTyping
+          }
+          onBack={() =>
+            setMobileChatOpen(false)
+          }
+          isMuted={
+            isMuted
+          }
+          onToggleMute={
+            toggleMute
+          }
+          isGroupMuted={
+            isGroupMuted
+          }
+          onToggleGroupMute={
+            toggleGroupMute
+          }
+          onOpenAIAnalysis={() =>
+            setShowMobileAIPanel(
+              true
+            )
+          }
         />
 
         {/* ================================================= */}

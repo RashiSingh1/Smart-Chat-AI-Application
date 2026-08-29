@@ -236,30 +236,33 @@ export default function MessageInput({
       }
 
       // -----------------------------------------------------
-      // STEP 2: Send image message
+      // STEP 2: HAND OFF TO CHAT
+      // The parent adds the message optimistically. Do NOT await
+      // the backend/AI processing here, otherwise the composer
+      // stays locked until the slow AI work finishes.
       // -----------------------------------------------------
 
       if (onSendImage) {
-        await onSendImage({
-          media_type:
-            uploadData.media_type,
-
-          media_url:
-            uploadData.media_url,
-
+        const mediaPayload = {
+          media_type: uploadData.media_type,
+          media_url: uploadData.media_url,
           text: text.trim(),
-
           isGroupChat,
           groupId,
+        };
+
+        Promise.resolve(onSendImage(mediaPayload)).catch((error) => {
+          console.error("Image message handoff error:", error);
         });
       }
 
-      // -----------------------------------------------------
-      // CLEAR IMAGE
-      // -----------------------------------------------------
-
+      // Clear the composer immediately.
       removeSelectedImage();
       setText("");
+
+      // Upload is finished, so the composer can be used again
+      // immediately while the message request/AI work continues.
+      setImageUploading(false);
 
     } catch (error) {
       console.error(
@@ -377,7 +380,10 @@ export default function MessageInput({
       }
 
       // -----------------------------------------------------
-      // STEP 2: Send voice message
+      // STEP 2: HAND OFF TO CHAT
+      // Do not await the parent request. The parent adds an
+      // optimistic message immediately and the backend handles
+      // AI classification separately.
       // -----------------------------------------------------
 
       if (!onSendVoice) {
@@ -386,16 +392,20 @@ export default function MessageInput({
         );
       }
 
-      await onSendVoice({
-        media_type:
-          uploadData.media_type,
-
-        media_url:
-          uploadData.media_url,
-
-        isGroupChat,
-        groupId,
+      Promise.resolve(
+        onSendVoice({
+          media_type: uploadData.media_type,
+          media_url: uploadData.media_url,
+          isGroupChat,
+          groupId,
+        })
+      ).catch((error) => {
+        console.error("Voice message handoff error:", error);
       });
+
+      // The file is uploaded and handed off, so release the
+      // composer immediately.
+      setVoiceUploading(false);
 
     } catch (error) {
       console.error(

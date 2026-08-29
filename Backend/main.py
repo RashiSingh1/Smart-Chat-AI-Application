@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 import traceback
@@ -1341,6 +1342,144 @@ def unmute_group(
 # =========================================================
 # FILE UPLOADS & MEDIA MESSAGES
 # =========================================================
+#
+# Media messages are intentionally split into two phases:
+#   1. Save + deliver the message immediately.
+#   2. Run the slower AI analysis in the background and send a
+#      small WebSocket update when the category is ready.
+#
+# This keeps image/voice delivery feeling like a normal chat app
+# instead of making the recipient wait for AI processing.
+# =========================================================
+
+async def classify_media_in_background(
+    message_id: int,
+    receiver_id: int,
+    sender_id: int,
+    media_path: str,
+    media_kind: str,
+):
+    db = SessionLocal()
+
+    try:
+        # AI analysis can be synchronous/slow, so move it off the
+        # FastAPI event loop.
+        if media_kind == "image":
+            ai_result = await asyncio.to_thread(
+                analyze_image,
+                media_path,
+            )
+        else:
+            ai_result = await asyncio.to_thread(
+                analyze_voice_message,
+                media_path,
+            )
+
+        ai_category = ai_result.category
+        ai_reason = ai_result.reason
+        ai_confidence = ai_result.confidence
+
+        # Important-contact override must still win over AI.
+        important_contact = (
+            db.query(models.ImportantContact)
+            .filter(
+                models.ImportantContact.user_id == receiver_id,
+                models.ImportantContact.contact_id == sender_id,
+                models.ImportantContact.always_notify == True,
+            )
+            .first()
+        )
+
+        if important_contact:
+            ai_category = "notify"
+            ai_reason = "Sender is marked as an important contact."
+            ai_confidence = 100.0
+
+        message = (
+            db.query(models.Message)
+            .filter(models.Message.id == message_id)
+            .first()
+        )
+
+        if not message:
+            return
+
+        message.ai_category = ai_category
+        message.ai_reason = ai_reason
+        message.ai_confidence = ai_confidence
+        db.commit()
+
+        update_payload = {
+            "type": "message_update",
+            "id": message.id,
+            "sender_id": message.sender_id,
+            "receiver_id": message.receiver_id,
+            "media_type": message.media_type,
+            "media_url": message.media_url,
+            "ai_category": message.ai_category,
+            "ai_reason": message.ai_reason,
+            "ai_confidence": message.ai_confidence,
+        }
+
+        # Send the AI result to both sides so the sender's optimistic
+        # message and the recipient's message get the same badge/reason.
+        await manager.send_personal_message(
+            receiver_id,
+            update_payload,
+        )
+        await manager.send_personal_message(
+            sender_id,
+            update_payload,
+        )
+
+    except Exception:
+        traceback.print_exc()
+
+        try:
+            message = (
+                db.query(models.Message)
+                .filter(models.Message.id == message_id)
+                .first()
+            )
+
+            if message:
+                message.ai_category = "digest"
+                message.ai_reason = (
+                    "Image received"
+                    if media_kind == "image"
+                    else "Voice message received"
+                )
+                message.ai_confidence = 0.0
+                db.commit()
+
+                update_payload = {
+                    "type": "message_update",
+                    "id": message.id,
+                    "sender_id": message.sender_id,
+                    "receiver_id": message.receiver_id,
+                    "media_type": message.media_type,
+                    "media_url": message.media_url,
+                    "ai_category": message.ai_category,
+                    "ai_reason": message.ai_reason,
+                    "ai_confidence": message.ai_confidence,
+                }
+
+                await manager.send_personal_message(
+                    receiver_id,
+                    update_payload,
+                )
+                await manager.send_personal_message(
+                    sender_id,
+                    update_payload,
+                )
+        except Exception:
+            db.rollback()
+            traceback.print_exc()
+
+    finally:
+        db.close()
+
+
 
 @app.post("/upload-audio")
 async def upload_audio(
@@ -1391,58 +1530,77 @@ async def send_audio_message(
     db: Session = Depends(get_db),
 ):
     audio_path = UPLOAD_DIR / Path(media_url).name
+
     try:
-        ai_result = analyze_voice_message(str(audio_path))
-        ai_category, ai_reason, ai_confidence = ai_result.category, ai_result.reason, ai_result.confidence
-    except Exception:
-        ai_category, ai_reason, ai_confidence = "digest", "Voice message received", 0.0
+        # IMPORTANT: save first with no AI wait.
+        new_message = models.Message(
+            sender_id=current_user.id,
+            receiver_id=receiver_id,
+            group_id=None,
+            text="",
+            media_type=media_type,
+            media_url=media_url,
+            is_read=False,
+            ai_category=None,
+            ai_reason=None,
+            ai_confidence=None,
+        )
 
-    new_message = models.Message(
-        sender_id=current_user.id,
-        receiver_id=receiver_id,
-        group_id=None,
-        text="",
-        media_type=media_type,
-        media_url=media_url,
-        is_read=False,
-        ai_category=ai_category,
-        ai_reason=ai_reason,
-        ai_confidence=ai_confidence,
-    )
-    db.add(new_message)
-    db.commit()
-    db.refresh(new_message)
+        db.add(new_message)
+        db.commit()
+        db.refresh(new_message)
 
-    await manager.send_personal_message(
-        receiver_id,
-        {
-            "type": "message",
+        # Deliver immediately. The recipient does not wait for voice AI.
+        await manager.send_personal_message(
+            receiver_id,
+            {
+                "type": "message",
+                "id": new_message.id,
+                "sender_id": new_message.sender_id,
+                "sender_username": current_user.username,
+                "receiver_id": new_message.receiver_id,
+                "text": new_message.text,
+                "media_type": new_message.media_type,
+                "media_url": new_message.media_url,
+                "created_at": new_message.created_at.isoformat() if new_message.created_at else None,
+                "ai_category": None,
+                "ai_reason": None,
+                "ai_confidence": None,
+            },
+        )
+
+        # AI continues independently and sends message_update later.
+        asyncio.create_task(
+            classify_media_in_background(
+                new_message.id,
+                receiver_id,
+                current_user.id,
+                str(audio_path),
+                "voice",
+            )
+        )
+
+        return {
+            "message": "Voice message sent",
             "id": new_message.id,
-            "sender_id": new_message.sender_id,
+            "sender_id": current_user.id,
             "sender_username": current_user.username,
-            "receiver_id": new_message.receiver_id,
-            "text": new_message.text,
+            "receiver_id": receiver_id,
             "media_type": new_message.media_type,
             "media_url": new_message.media_url,
             "created_at": new_message.created_at.isoformat() if new_message.created_at else None,
-            "ai_category": new_message.ai_category,
-            "ai_reason": new_message.ai_reason,
-            "ai_confidence": new_message.ai_confidence,
-        },
-    )
+            "ai_category": None,
+            "ai_reason": None,
+            "ai_confidence": None,
+        }
 
-    return {
-        "message": "Voice message sent",
-        "id": new_message.id,
-        "sender_id": current_user.id,
-        "sender_username": current_user.username,
-        "media_type": new_message.media_type,
-        "media_url": new_message.media_url,
-        "ai_category": new_message.ai_category,
-        "ai_reason": new_message.ai_reason,
-        "ai_confidence": new_message.ai_confidence,
-    }
-
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception:
+        db.rollback()
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail="Failed to send voice message")
 
 @app.post("/messages/image")
 async def send_image_message(
@@ -1454,59 +1612,78 @@ async def send_image_message(
     db: Session = Depends(get_db),
 ):
     image_path = UPLOAD_DIR / Path(media_url).name
+
     try:
-        ai_result = analyze_image(str(image_path))
-        ai_category, ai_reason, ai_confidence = ai_result.category, ai_result.reason, ai_result.confidence
-    except Exception:
-        ai_category, ai_reason, ai_confidence = "digest", "Image received", 0.0
+        # IMPORTANT: save first with no AI wait.
+        new_message = models.Message(
+            sender_id=current_user.id,
+            receiver_id=receiver_id,
+            group_id=None,
+            text=(text or "").strip(),
+            media_type=media_type,
+            media_url=media_url,
+            is_read=False,
+            ai_category=None,
+            ai_reason=None,
+            ai_confidence=None,
+        )
 
-    new_message = models.Message(
-        sender_id=current_user.id,
-        receiver_id=receiver_id,
-        group_id=None,
-        text=(text or "").strip(),
-        media_type=media_type,
-        media_url=media_url,
-        is_read=False,
-        ai_category=ai_category,
-        ai_reason=ai_reason,
-        ai_confidence=ai_confidence,
-    )
-    db.add(new_message)
-    db.commit()
-    db.refresh(new_message)
+        db.add(new_message)
+        db.commit()
+        db.refresh(new_message)
 
-    await manager.send_personal_message(
-        receiver_id,
-        {
-            "type": "message",
+        # Deliver image immediately. The recipient does not wait for image AI.
+        await manager.send_personal_message(
+            receiver_id,
+            {
+                "type": "message",
+                "id": new_message.id,
+                "sender_id": new_message.sender_id,
+                "sender_username": current_user.username,
+                "receiver_id": new_message.receiver_id,
+                "text": new_message.text,
+                "media_type": new_message.media_type,
+                "media_url": new_message.media_url,
+                "created_at": new_message.created_at.isoformat() if new_message.created_at else None,
+                "ai_category": None,
+                "ai_reason": None,
+                "ai_confidence": None,
+            },
+        )
+
+        # AI continues independently and sends message_update later.
+        asyncio.create_task(
+            classify_media_in_background(
+                new_message.id,
+                receiver_id,
+                current_user.id,
+                str(image_path),
+                "image",
+            )
+        )
+
+        return {
+            "message": "Image message sent",
             "id": new_message.id,
-            "sender_id": new_message.sender_id,
+            "sender_id": current_user.id,
             "sender_username": current_user.username,
-            "receiver_id": new_message.receiver_id,
+            "receiver_id": receiver_id,
             "text": new_message.text,
             "media_type": new_message.media_type,
             "media_url": new_message.media_url,
             "created_at": new_message.created_at.isoformat() if new_message.created_at else None,
-            "ai_category": new_message.ai_category,
-            "ai_reason": new_message.ai_reason,
-            "ai_confidence": new_message.ai_confidence,
-        },
-    )
+            "ai_category": None,
+            "ai_reason": None,
+            "ai_confidence": None,
+        }
 
-    return {
-        "message": "Image message sent",
-        "id": new_message.id,
-        "sender_id": current_user.id,
-        "sender_username": current_user.username,
-        "text": new_message.text,
-        "media_type": new_message.media_type,
-        "media_url": new_message.media_url,
-        "ai_category": new_message.ai_category,
-        "ai_reason": new_message.ai_reason,
-        "ai_confidence": new_message.ai_confidence,
-    }
-
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception:
+        db.rollback()
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail="Failed to send image message")
 
 # =========================================================
 # WEBSOCKET RATE LIMITING
